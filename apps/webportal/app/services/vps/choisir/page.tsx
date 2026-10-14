@@ -8,7 +8,7 @@ import {
 } from "@/components/PublicVpsConfigurator";
 import { describeTierAttributes } from "@/lib/billing-v2-formules";
 import { formatCurrencyFromCents } from "@/lib/formatters";
-import { getBillingV2FormulesCatalog } from "@/lib/internal-api";
+import { getBillingV2FormulesCatalog, getPublicManagedContent } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
 
 export const dynamic = "force-dynamic";
@@ -44,8 +44,11 @@ export default async function VpsConfigurationPage({ searchParams }: PageProps) 
     notFound();
   }
 
-  const result = await getBillingV2FormulesCatalog();
-  if (result.error) {
+  const [result, legalResult] = await Promise.all([
+    getBillingV2FormulesCatalog(),
+    getPublicManagedContent("legal:cgv"),
+  ]);
+  if (result.error || legalResult.error || !legalResult.data?.versionLabel) {
     return (
       <ErrorState
         description="La sélection VPS ne peut pas être vérifiée pour le moment."
@@ -95,7 +98,7 @@ export default async function VpsConfigurationPage({ searchParams }: PageProps) 
     },
   };
 
-  return <PublicVpsConfigurator selection={selection} />;
+  return <PublicVpsConfigurator cgvVersionLabel={legalResult.data.versionLabel} selection={selection} />;
 }
 
 function singleSearchParam(value: string | string[] | undefined) {

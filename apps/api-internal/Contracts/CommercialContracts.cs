@@ -15,7 +15,8 @@ public sealed record CommercialDocumentLine(
     int LineTotalCents,
     int SortOrder,
     string CreatedAt,
-    string UpdatedAt);
+    string UpdatedAt,
+    string? TaxTreatment = null);
 
 public record CommercialDocumentSummary(
     string Id,
@@ -169,7 +170,8 @@ public sealed record CommercialDocumentLinePayload(
     string? UnitLabel,
     int? UnitPriceCents,
     int? TaxRateBasisPoints,
-    int? SortOrder);
+    int? SortOrder,
+    string? TaxTreatment = null);
 
 public sealed record CommercialDocumentMutationResponse(
     string Id,

@@ -13,6 +13,7 @@ public static class BillingV2RenewalTests
     public static Task RunAsync()
     {
         VerifyRenewalUsesContractualPrice();
+        VerifyTaxedRenewalKeepsContractTotal();
         VerifyCommitmentFloorProducesExactAmount();
         VerifyRenewalExcludesOneTimeItems();
         VerifyRenewalRefusesInitialCycle();
@@ -56,6 +57,22 @@ public static class BillingV2RenewalTests
             result.Draft.Lines.Count == 1
             && result.Draft.Lines[0].UnitAmountCents == 4500,
             "Scenario F : la ligne doit porter le montant fige au contrat.");
+    }
+
+    private static void VerifyTaxedRenewalKeepsContractTotal()
+    {
+        var decision = BillingVatPolicy.Resolve("FR",
+            new DateTime(2026, 10, 15, 0, 0, 0, DateTimeKind.Utc),
+            new DateTime(2026, 11, 15, 0, 0, 0, DateTimeKind.Utc));
+        var renewal = BillingV2RenewalChargeFactory.Build(Request(
+            cycle: 10,
+            items: [Item("FR", 12000, quantity: 1)],
+            vatDecision: decision));
+        Ensure(renewal.Draft.TotalAmountCents == 12000
+            && renewal.Draft.NetAmountCents == 10000
+            && renewal.Draft.TaxAmountCents == 2000
+            && BillingV2BillingEventPolicy.ValidateForFinalization(renewal.Draft).IsValid,
+            "Le renouvellement conserve le TTC contractuel tout en ventilant la TVA.");
     }
 
     // -----------------------------------------------------------------
@@ -340,6 +357,15 @@ public static class BillingV2RenewalTests
             exact.Settled && exact.SettledAmountCents == 4500,
             "Un montant exact dans la bonne devise doit etre accepte.");
 
+        var wrongTax = BillingV2StripeLifecycleVerifier.VerifyInvoice(
+            Invoice(status: "paid", amountPaid: 4500)
+                with { TotalTaxAmountCents = 0 },
+            Subscription("active"),
+            expectation with { ExpectedTaxAmountCents = 750 });
+        Ensure(!wrongTax.Settled
+            && wrongTax.ReasonCode == "BILLING_V2_RENEWAL_INVOICE_TAX_MISMATCH",
+            "Une facture Stripe payee sans la TVA attendue ne confirme pas le cycle.");
+
         // Le mismatch remonte en revue humaine, jamais en retrait d'acces.
         var decision = BillingV2RenewalGracePolicy.Resolve(wrongAmount.Outcome);
         Ensure(
@@ -576,9 +602,9 @@ public static class BillingV2RenewalTests
             "PayPal doit etre refuse au dispatch.");
 
         Ensure(
-            !BillingV2LaunchScope.EvaluateCheckout(
+            BillingV2LaunchScope.EvaluateCheckout(
                 "stripe", BillingV2PaymentModes.Monthly, 1).IsValid,
-            "Une TVA non nulle doit etre refusee au dispatch.");
+            "Une TVA incluse peut etre encaissee quand le taux Stripe est configure.");
 
         // Les capacites hors perimetre doivent rester fermees : ce test est la
         // pour qu'un passage a true soit un acte delibere, pas un effet de bord.
@@ -590,7 +616,7 @@ public static class BillingV2RenewalTests
             && !BillingV2LaunchScope.RefundsEnabled
             && !BillingV2LaunchScope.ChargebacksEnabled
             && !BillingV2LaunchScope.SelfServiceCancellationEnabled
-            && !BillingV2LaunchScope.NonZeroTaxEnabled,
+            && BillingV2LaunchScope.NonZeroTaxEnabled,
             "Le perimetre gele doit rester ferme.");
         Ensure(
             BillingV2LaunchScope.StripeMonthlyEnabled,
@@ -625,7 +651,9 @@ public static class BillingV2RenewalTests
                     BillingV2BillingCalendar.ResolveCyclePeriod(
                         new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
                         12,
-                        2)));
+                        2),
+                    new BillingVatDecision(BillingVatPolicy.HistoricalFranchise,
+                        null, true, "VAT_HISTORICAL_FRANCHISE")));
         }
         catch (InvalidOperationException exception)
             when (exception.Message == "BILLING_V2_RENEWAL_UPFRONT_NOT_SUPPORTED")
@@ -689,7 +717,8 @@ public static class BillingV2RenewalTests
         IReadOnlyList<BillingV2RenewalContractItem> items,
         string paymentMode = BillingV2PaymentModes.Monthly,
         int discountBasisPoints = 0,
-        long? floorCents = null)
+        long? floorCents = null,
+        BillingVatDecision? vatDecision = null)
         => new(
             SubscriptionId,
             cycle,
@@ -702,7 +731,9 @@ public static class BillingV2RenewalTests
             BillingV2BillingCalendar.ResolveCyclePeriod(
                 new DateTime(2026, 1, 15, 9, 0, 0, DateTimeKind.Utc),
                 1,
-                Math.Max(1, cycle)));
+                Math.Max(1, cycle)),
+            vatDecision ?? new BillingVatDecision(BillingVatPolicy.HistoricalFranchise,
+                null, true, "VAT_HISTORICAL_FRANCHISE"));
 
     private static BillingV2RenewalContractItem Item(
         string code,

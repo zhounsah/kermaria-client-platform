@@ -1,21 +1,22 @@
 # Conditions Générales de Vente - Zachary IT
 
-**Version du : 03 août 2026**
+**Version du : 14 octobre 2026**
 
 Les présentes Conditions Générales de Vente, ci-après les « CGV », s’appliquent aux prestations proposées par :
 
 **Zachary HOUNSA-HOUNKPA EI**
-Nom commercial : **Zachary IT**
-Entrepreneur individuel - Micro-entreprise
-SIREN : **105 111 520**
-SIRET : **105 111 520 00018**
-Code APE : **6202A - Conseil en systèmes et logiciels informatiques**
-Adresse professionnelle : 3 Kermaria, 35580 Guichen
-Adresse e-mail : **[contact@zachary-it.fr](mailto:contact@zachary-it.fr)**
-Site internet : **zachary-it.fr**
 
-Le Prestataire est soumis au régime de la franchise en base de TVA. Les factures comportent la mention :
-**« TVA non applicable, art. 293 B du CGI »**.
+- Nom commercial : **Zachary IT**
+- Entrepreneur individuel - Micro-entreprise
+- SIREN : **105 111 520**
+- SIRET : **105 111 520 00018**
+- Numéro de TVA intracommunautaire : **FR85105111520**
+- Code APE : **6202A - Conseil en systèmes et logiciels informatiques**
+- Adresse professionnelle : 3 Kermaria, 35580 Guichen
+- Adresse e-mail : **[contact@zachary-it.fr](mailto:contact@zachary-it.fr)**
+- Site internet : **zachary-it.fr**
+
+Le Prestataire relève du régime réel normal de TVA depuis le **1er octobre 2026**, sur option. Son régime micro-BNC d'imposition des bénéfices demeure applicable.
 
 ---
 
@@ -181,7 +182,9 @@ Le Prestataire se réserve le droit de refuser une commande manifestement incomp
 
 Les prix sont indiqués en euros.
 
-Le Prestataire étant en franchise en base de TVA, les prix sont indiqués sans TVA.
+Pour une prestation française soumise au taux normal, les documents indiquent le prix hors taxe, la TVA au taux de 20 % et le total toutes taxes comprises. Les prix destinés aux consommateurs sont présentés TTC ; les offres professionnelles distinguent HT et TTC. Le traitement d'une opération internationale, exonérée ou soumise à autoliquidation est indiqué dans le devis ou la facture selon sa qualification fiscale.
+
+Le passage à la TVA ne modifie pas à lui seul le montant TTC des contrats déjà conclus. Une évolution tarifaire éventuelle suit les conditions du contrat concerné et fait l'objet d'une information préalable.
 
 Les prix peuvent être exprimés :
 

@@ -32,6 +32,10 @@ second_geographic_site_guaranteed: false
 
 Ne pas publier une valeur non confirmée. En cas de conflit avec l'existant ou l'infrastructure réelle, conserver le code fonctionnel et signaler précisément le point bloquant.
 
+Le [relevé Veeam du 7 octobre 2026](VEEAM_BACKUP_STATUS.md) confirme 30
+**points de restauration de la configuration VBR**, pas une rétention de 30
+jours des données client. Il ne valide pas les valeurs proposées ci-dessus.
+
 ## Travail demandé
 
 1. Inspecter le dépôt et identifier :

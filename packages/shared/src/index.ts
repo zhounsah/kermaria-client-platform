@@ -605,7 +605,13 @@ export interface AdminSubscriptionDetail {
   provisioning: SubscriptionProvisioningSummary;
 }
 
-export type FiscalRegime = "franchise_base" | "standard";
+export type FiscalRegime =
+  | "franchise_base"
+  | "standard"
+  | "reverse_charge"
+  | "exempt"
+  | "outside_scope"
+  | "review_required";
 
 export type PublicPackCode =
   | "pack-dossier-securise"
@@ -1914,6 +1920,7 @@ export interface CommercialDocumentLine {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+  taxTreatment?: string | null;
 }
 
 export interface CommercialDocumentSummary {
@@ -1969,6 +1976,7 @@ export interface CommercialDocumentLinePayload {
   unitPriceCents: number;
   taxRateBasisPoints: number | null;
   sortOrder: number;
+  taxTreatment?: string | null;
 }
 
 export interface CommercialDocumentMutationResponse {
@@ -2431,6 +2439,7 @@ export interface BillingV2PublicPriceComponent {
   billingCadence: "monthly" | "one_time";
   chargeTrigger: "initial_subscription" | "subscription_change";
   amountCents: number;
+  frenchNetAmountCents?: number;
   currency: string;
   discountEligible: boolean;
   servicePriceId: string | null;
@@ -2455,6 +2464,7 @@ export interface BillingV2PublicTier {
   numericValue: number | null;
   /** Somme des composantes mensuelles. Affichage seulement. */
   monthlyAmountCents: number;
+  monthlyFrenchNetAmountCents?: number;
   publicSelectable: boolean;
   priceComponents: BillingV2PublicPriceComponent[] | null;
   attributes: BillingV2PublicTierAttribute[];
@@ -2469,6 +2479,7 @@ export interface BillingV2PublicService {
   scopeType: string;
   /** Somme des composantes mensuelles sans palier. Affichage seulement. */
   flatMonthlyAmountCents: number | null;
+  flatMonthlyFrenchNetAmountCents?: number;
   tiers: BillingV2PublicTier[];
   discountEligible: boolean;
   publicVisible: boolean;
@@ -2570,6 +2581,7 @@ export type PublicCommercialOrderingMode = "direct" | "offer_component" | "quote
 export type PublicCommercialMoney = {
   amountCents: number;
   currency: string;
+  frenchNetAmountCents?: number;
 };
 
 export type PublicCommercialTier = {
@@ -2693,6 +2705,11 @@ export interface BillingV2PublicQuote {
   /** `native` : souscription V2, avec ou sans formule d'origine. */
   checkoutMode: string;
   checkoutReasonCode: string;
+  subtotalBeforeTaxCents: number;
+  taxAmountCents: number;
+  taxRateBasisPoints: number | null;
+  taxTreatment: string;
+  taxPolicyVersion: string;
 }
 
 /** Panier commercial modifiable Phase 1 — distinct d'une Subscription. */
@@ -2824,6 +2841,12 @@ export interface BillingV2CartQuote {
   recurringTotalCents: number;
   oneTimeDueNowCents: number;
   totalDueNowCents: number;
+  subtotalBeforeTaxCents: number;
+  taxAmountCents: number;
+  taxRateBasisPoints: number | null;
+  taxTreatment: string;
+  taxPolicyVersion: string | null;
+  cgvVersionId: string | null;
   calculatedAtUtc: string;
   expiresAtUtc: string;
   quoteStatus: BillingV2CartQuoteStatus;
@@ -2908,6 +2931,7 @@ export interface BillingV2CartCheckoutRequest {
   expectedCartVersion: number;
   acceptedQuoteVersion: number;
   acceptedCompositionFingerprint: string;
+  acceptedCgvVersionId: string;
 }
 
 /** Résultat du démarrage idempotent du checkout d'un panier. */

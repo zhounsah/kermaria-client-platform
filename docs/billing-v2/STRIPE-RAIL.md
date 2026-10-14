@@ -49,9 +49,16 @@ de l'intention du gagnant. Aucun second contrat n'est créé.
 
 `BillingV2StripeDispatchGuard` refuse le dispatch si l'événement est absent, non
 `finalized`, sans ligne, sans devise valide, à total nul ou négatif, si la
-décomposition `récurrent + one-shot` ne retombe pas sur le total, s'il est déjà
-réglé, ou si une TVA non nulle est présente (franchise en base ; le contraire
-exigerait de déclarer la fiscalité à Stripe, hors périmètre Phase 2).
+décomposition `récurrent + one-shot` ne retombe pas sur le total ou s'il est déjà
+réglé. Depuis le 1er octobre 2026, le moteur conserve le montant TTC du
+catalogue et ventile HT/TVA sur chaque ligne. Un événement taxable exige
+`STRIPE_FR_VAT20_INCLUSIVE_TAX_RATE_ID`, vérifié avant la création du contrat.
+Si BPCE est en mode `live`, le nouveau Checkout taxable attend aussi
+`BPCE_SELLER_VAT_NUMBER=FR85105111520` et
+`BPCE_SELLER_VAT_NUMBER_CONFIRMED=true` ainsi que
+`BPCE_SELLER_EI_MENTION_CONFIRMED=true`, posés seulement après vérification
+du numéro et de la mention EI sur un PDF réel. Les anciennes factures restent
+lisibles.
 
 `billing_v2_authoritative_checkout_requests` porte désormais
 `subscription_change_id` et `billing_event_id`. Après finalisation, **plus aucune
@@ -75,6 +82,13 @@ Un timeout réseau ne crée jamais une seconde tentative :
 
 Le montant est transmis en `price_data` inline. **Aucun `price_id` externe** n'est
 envoyé : c'est ce qui garantit que le prélèvement égale le montant local.
+Pour une opération française taxable, `price_data.tax_behavior=inclusive` et
+le Tax Rate manuel de 20 % sont transmis avec la session et l'abonnement.
+`automatic_tax` reste désactivé. Le total Stripe et le montant de TVA relus
+doivent correspondre au BillingEvent, sinon le paiement part en revue. Les
+opérations internationales ou non qualifiées ne partent pas en Checkout
+automatique ; le chemin historique à Price IDs est fermé aux nouvelles
+créations après la bascule fiscale.
 
 | Mode | Représentation Stripe | Récurrence |
 |---|---|---|

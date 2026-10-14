@@ -159,7 +159,8 @@ public sealed class MariaDbManagedContentRepository : IManagedContentRepository
                     updated_at
                 FROM managed_content_entries
                 WHERE content_key = @content_key
-                LIMIT 1;
+                LIMIT 1
+                FOR UPDATE;
                 """;
             readCommand.Parameters.AddWithValue("@content_key", entry.Key);
 
@@ -172,6 +173,24 @@ public sealed class MariaDbManagedContentRepository : IManagedContentRepository
         }
 
         var now = DateTime.UtcNow;
+        var changed = current is null
+            || current.ContentType != entry.ContentType
+            || current.Title != entry.Title
+            || current.PublicPath != entry.PublicPath
+            || current.BodyMarkdown != entry.BodyMarkdown
+            || current.VersionLabel != entry.VersionLabel;
+        if (changed && entry.Key is "legal:cgv" or "legal:mentions-legales")
+        {
+            if (current is not null)
+            {
+                await WriteLegalVersionAsync(connection, transaction,
+                    current.Key, current.VersionLabel, current.BodyMarkdown,
+                    now, cancellationToken);
+            }
+            await WriteLegalVersionAsync(connection, transaction,
+                entry.Key, entry.VersionLabel, entry.BodyMarkdown,
+                now, cancellationToken);
+        }
         var createdAt = current?.CreatedAt is { Length: > 0 }
             ? DateTime.Parse(
                 current.CreatedAt,
@@ -228,18 +247,37 @@ public sealed class MariaDbManagedContentRepository : IManagedContentRepository
 
         await transaction.CommitAsync(cancellationToken);
 
-        var changed = current is null
-            || current.ContentType != entry.ContentType
-            || current.Title != entry.Title
-            || current.PublicPath != entry.PublicPath
-            || current.BodyMarkdown != entry.BodyMarkdown
-            || current.VersionLabel != entry.VersionLabel;
-
         return new ManagedContentMutationResponse(
             entry.Key,
             changed,
             now.ToString("O"),
             correlationId);
+    }
+
+    private static async Task WriteLegalVersionAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string key,
+        string? versionLabel,
+        string body,
+        DateTime recordedAt,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT IGNORE INTO managed_content_legal_versions (
+                id, content_key, version_label, body_markdown,
+                content_sha256, recorded_at)
+            VALUES (@id, @key, @version, @body, SHA2(@body, 256), @recorded_at);
+            """;
+        command.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
+        command.Parameters.AddWithValue("@key", key);
+        command.Parameters.AddWithValue("@version", DbValue(versionLabel));
+        command.Parameters.AddWithValue("@body", body);
+        command.Parameters.AddWithValue("@recorded_at", recordedAt);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private async Task<MySqlConnection> OpenConnectionAsync(

@@ -27,9 +27,9 @@ export function CommercialDocumentLineTable({
               <th>Libellé</th>
               <th>Quantité</th>
               <th>Unité</th>
-              <th>Prix unitaire</th>
+              <th>Prix unitaire HT</th>
               <th>TVA</th>
-              <th>Total ligne</th>
+              <th>Total ligne HT</th>
             </tr>
           </thead>
           <tbody>
@@ -41,17 +41,17 @@ export function CommercialDocumentLineTable({
                 </td>
                 <td data-label="Quantité">{line.quantity}</td>
                 <td data-label="Unité">{line.unitLabel}</td>
-                <td data-label="Prix unitaire">
+                <td data-label="Prix unitaire HT">
                   {formatCurrencyFromCents(line.unitPriceCents)}
                 </td>
                 <td data-label="TVA">
-                  {line.fiscalRegime === "franchise_base"
-                    ? "Non applicable"
+                  {line.fiscalRegime !== "standard"
+                    ? line.fiscalMention
                     : line.taxRateBasisPoints === null
-                      ? line.fiscalMention
+                      ? "À vérifier"
                       : `${line.taxRateBasisPoints / 100}%`}
                 </td>
-                <td data-label="Total ligne">
+                <td data-label="Total ligne HT">
                   <strong>{formatCurrencyFromCents(line.lineTotalCents)}</strong>
                 </td>
               </tr>

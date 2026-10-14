@@ -26,6 +26,7 @@ type InternalCheckoutPayload = {
   idempotencyKey: string;
   successUrl: string;
   cancelUrl: string;
+  acceptedCgvVersionLabel: string;
 };
 
 export const dynamic = "force-dynamic";
@@ -56,6 +57,13 @@ export async function POST(request: NextRequest) {
   if (!technicalRequestId) {
     return fail("INVALID_REQUEST", "La demande technique VPS est invalide.", 400, correlationId);
   }
+  const acceptedCgvVersionLabel = (candidate as { acceptedCgvVersionLabel?: unknown })
+    .acceptedCgvVersionLabel;
+  if (typeof acceptedCgvVersionLabel !== "string"
+    || !acceptedCgvVersionLabel.startsWith("Version du :")
+    || acceptedCgvVersionLabel.length > 160) {
+    return fail("BILLING_V2_CGV_ACCEPTANCE_REQUIRED", "Acceptez les CGV en vigueur avant de continuer.", 400, correlationId);
+  }
 
   const portalUrl = getPortalPublicUrl(request);
   try {
@@ -70,6 +78,7 @@ export async function POST(request: NextRequest) {
         idempotencyKey,
         successUrl: `${portalUrl}/api/vps/checkout/return?technicalRequestId=${encodeURIComponent(technicalRequestId)}&session_id={CHECKOUT_SESSION_ID}`,
         cancelUrl: `${portalUrl}/services/vps/choisir?checkout=cancelled`,
+        acceptedCgvVersionLabel,
       },
       sessionToken,
       correlationId,

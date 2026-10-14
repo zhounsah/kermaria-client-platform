@@ -25,7 +25,8 @@ public sealed record BillingV2AuthoritativeCheckoutRequest(
     string CancelUrl,
     string? TechnicalRequestId = null,
     BillingV2AuthoritativeCheckoutComposition? CompositionOverride = null,
-    BillingV2CartCheckoutLink? CartCheckoutLink = null);
+    BillingV2CartCheckoutLink? CartCheckoutLink = null,
+    string? AcceptedCgvVersionLabel = null);
 
 /// <summary>
 /// Contexte strictement interne du checkout Cart. Il est construit après la
@@ -36,7 +37,8 @@ public sealed record BillingV2CartCheckoutLink(
     string CartId,
     int ExpectedCartVersion,
     long ExpectedRecurringTotalCents,
-    long ExpectedTotalDueNowCents);
+    long ExpectedTotalDueNowCents,
+    string AcceptedCgvVersionId);
 
 /// <summary>
 /// Résultat minimal du verrouillage Cart à l'intérieur de la transaction de
@@ -399,6 +401,25 @@ public sealed class BillingV2AuthoritativeCheckoutService
             mapping.CommitmentMonths);
         var periodStart = contractPeriod.StartUtc;
         var periodEnd = contractPeriod.EndUtc;
+        var acceptedCgvVersionId = checkoutRequest.CartCheckoutLink
+            ?.AcceptedCgvVersionId
+            ?? await ReadCurrentCgvVersionIdForLabelAsync(
+                readConnection, checkoutRequest.AcceptedCgvVersionLabel,
+                cancellationToken);
+        var customerCountry = await ReadCustomerCountryAsync(
+            readConnection, session.CustomerId, cancellationToken);
+        var vatDecision = BillingVatPolicy.Resolve(
+            customerCountry, periodStart, periodEnd);
+        if (!vatDecision.AutomaticChargeAllowed)
+        {
+            throw new InvalidOperationException(vatDecision.ReasonCode);
+        }
+        if (vatDecision.RateBasisPoints.HasValue
+            && !_stripe.HasFrenchInclusiveVatTaxRate)
+        {
+            throw new InvalidOperationException(
+                "BILLING_V2_STRIPE_INCLUSIVE_TAX_RATE_REQUIRED");
+        }
         var eventBuild = BillingV2BillingEventFactory.BuildInitialCharge(
             new BillingV2BillingEventBuildRequest(
                 mapping.PaymentMode,
@@ -409,7 +430,8 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 pricing,
                 periodStart,
                 periodEnd,
-                $"billing_v2.billing_event|initial_charge|{intentHash}"));
+                $"billing_v2.billing_event|initial_charge|{intentHash}",
+                vatDecision));
 
         await using var connection = new MySqlConnection(_sql.ConnectionString);
         await connection.OpenAsync(cancellationToken);
@@ -486,6 +508,9 @@ public sealed class BillingV2AuthoritativeCheckoutService
             mapping.CommitmentMonths,
             now,
             hasRecurringComponent);
+        await VerifyCurrentCgvVersionAsync(
+            connection, transaction, acceptedCgvVersionId,
+            cancellationToken);
         await InsertSubscriptionAsync(
             connection,
             transaction,
@@ -495,6 +520,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
             checkoutPlan.Currency,
             minimumCommitmentAmountCents,
             lifecycle,
+            acceptedCgvVersionId,
             now,
             cancellationToken);
 
@@ -1592,6 +1618,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
         string currency,
         long? minimumCommitmentAmountCents,
         BillingV2SubscriptionLifecyclePlan lifecycle,
+        string? acceptedCgvVersionId,
         DateTime now,
         CancellationToken cancellationToken)
     {
@@ -1611,6 +1638,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 minimum_commitment_amount_cents,
                 billing_model,
                 pricing_authority,
+                accepted_cgv_version_id,
                 commitment_started_at,
                 commitment_ends_at,
                 current_period_started_at,
@@ -1630,6 +1658,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 @minimum_commitment_amount_cents,
                 'v2',
                 'item_snapshots',
+                @accepted_cgv_version_id,
                 @commitment_started_at,
                 @commitment_ends_at,
                 @current_period_started_at,
@@ -1671,6 +1700,8 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 : mapping.CommitmentTermId);
         command.Parameters.AddWithValue("@payment_mode", mapping.PaymentMode);
         command.Parameters.AddWithValue("@currency", currency);
+        command.Parameters.AddWithValue("@accepted_cgv_version_id",
+            acceptedCgvVersionId is null ? DBNull.Value : acceptedCgvVersionId);
         command.Parameters.AddWithValue(
             "@discount_basis_points",
             mapping.DiscountBasisPoints);
@@ -2201,6 +2232,80 @@ public sealed class BillingV2AuthoritativeCheckoutService
 
     private sealed record BillingV2VpsTechnicalCheckoutLink(
         string AuthoritativeCheckoutRequestId);
+
+    private static async Task<string?> ReadCustomerCountryAsync(
+        MySqlConnection connection,
+        string customerId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT country FROM customers WHERE id = @customer_id LIMIT 1;";
+        command.Parameters.AddWithValue("@customer_id", customerId);
+        return await command.ExecuteScalarAsync(cancellationToken) as string;
+    }
+
+    private static async Task<string> ReadCurrentCgvVersionIdForLabelAsync(
+        MySqlConnection connection,
+        string? acceptedVersionLabel,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(acceptedVersionLabel)
+            || acceptedVersionLabel.Length > 160)
+        {
+            throw new InvalidOperationException(
+                "BILLING_V2_CGV_ACCEPTANCE_REQUIRED");
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT version.id
+            FROM managed_content_entries current_content
+            INNER JOIN managed_content_legal_versions version
+                ON version.content_key = current_content.content_key
+               AND version.content_sha256 = SHA2(current_content.body_markdown, 256)
+            WHERE current_content.content_key = 'legal:cgv'
+              AND current_content.version_label = @accepted_label
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@accepted_label",
+            acceptedVersionLabel.Trim());
+        var versionId = (await command.ExecuteScalarAsync(cancellationToken))
+            ?.ToString();
+        return versionId ?? throw new InvalidOperationException(
+            "BILLING_V2_CGV_VERSION_CHANGED");
+    }
+
+    private static async Task VerifyCurrentCgvVersionAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string acceptedVersionId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT version.id
+            FROM managed_content_entries current_content
+            INNER JOIN managed_content_legal_versions version
+                ON version.content_key = current_content.content_key
+               AND version.content_sha256 = SHA2(current_content.body_markdown, 256)
+            WHERE current_content.content_key = 'legal:cgv'
+              AND version.id = @accepted_version_id
+            LIMIT 1
+            FOR UPDATE;
+            """;
+        command.Parameters.AddWithValue("@accepted_version_id",
+            acceptedVersionId);
+        var found = await command.ExecuteScalarAsync(cancellationToken);
+        if (!string.Equals(found?.ToString(), acceptedVersionId,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("BILLING_V2_CGV_VERSION_CHANGED");
+        }
+    }
 }
 
 public static class BillingV2AuthoritativeCheckoutIdempotencyPolicy
@@ -2359,6 +2464,7 @@ public static class BillingV2AuthoritativeCheckoutPriceLockPolicy
             nowUtc.AddMonths(months),
             resolvedReason);
     }
+
 }
 
 public static class BillingV2AuthoritativeCheckoutGate

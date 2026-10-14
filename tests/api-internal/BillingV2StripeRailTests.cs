@@ -24,7 +24,8 @@ public static class BillingV2StripeRailTests
         VerifyDispatchRefusedWithoutLines();
         VerifyDispatchRefusedOnInvalidCurrency();
         VerifyDispatchRefusedWhenAlreadySettled();
-        VerifyDispatchRefusedWhenTaxIsPresent();
+        VerifyTaxRequiresInclusiveRate();
+        VerifyVatMathAndTransition();
 
         // C. PaymentAttempt : scenario 5
         VerifyRetryReusesSameProviderRequestKey();
@@ -52,6 +53,7 @@ public static class BillingV2StripeRailTests
         VerifyCompletedSessionWithoutPaymentBlocksActivation();
         VerifyForeignSessionBlocksActivation();
         VerifyExactSettlementIsConfirmed();
+        VerifyTaxMismatchBlocksSettlement();
         VerifyMissingSessionStaysPending();
 
         // F. Safety
@@ -65,6 +67,8 @@ public static class BillingV2StripeRailTests
         // Construction de l'evenement financier
         VerifyMonthlyBillingEventMatchesPricingEngine();
         VerifyUpfrontBillingEventMatchesPricingEngine();
+        VerifyTaxedBillingEventKeepsCustomerTotal();
+        VerifyTaxRoundingMatchesStripeGroupedLines();
 
         return Task.CompletedTask;
     }
@@ -151,12 +155,63 @@ public static class BillingV2StripeRailTests
             "BILLING_V2_STRIPE_DISPATCH_ALREADY_SETTLED",
             "Un evenement deja encaisse ne doit pas repartir chez Stripe.");
 
-    private static void VerifyDispatchRefusedWhenTaxIsPresent()
-        => EnsureRefused(
-            BillingV2StripeDispatchGuard.Evaluate(
-                Event() with { TaxAmountCents = 200 }),
-            "BILLING_V2_STRIPE_DISPATCH_TAX_NOT_SUPPORTED",
-            "Une TVA non nulle doit echouer en ferme sur le rail Phase 2.");
+    private static void VerifyTaxRequiresInclusiveRate()
+    {
+        var taxed = Event() with { TaxAmountCents = 674, FrenchTaxable = true };
+        Ensure(BillingV2StripeDispatchGuard.Evaluate(taxed).IsValid,
+            "Un evenement TTC taxe est recevable par le rail.");
+        var refused = false;
+        try
+        {
+            _ = BillingV2StripeCheckoutRequestFactory.Build(
+                taxed, "attempt", "key", "client@example.invalid",
+                "https://portal.invalid/ok", "https://portal.invalid/ko");
+        }
+        catch (InvalidOperationException exception)
+            when (exception.Message == "BILLING_V2_STRIPE_INCLUSIVE_TAX_RATE_REQUIRED")
+        {
+            refused = true;
+        }
+        Ensure(refused, "Sans taux inclusif configure, aucun Checkout taxe ne part.");
+
+        var request = BillingV2StripeCheckoutRequestFactory.Build(
+            taxed, "attempt", "key", "client@example.invalid",
+            "https://portal.invalid/ok", "https://portal.invalid/ko",
+            inclusiveTaxRateId: "txr_test_vat20");
+        var form = BillingV2StripeCheckoutRequestFactory.ToFormParameters(request);
+        Ensure(form["line_items[0][price_data][tax_behavior]"] == "inclusive"
+            && form["line_items[0][tax_rates][0]"] == "txr_test_vat20"
+            && form["subscription_data[default_tax_rates][0]"] == "txr_test_vat20"
+            && request.ExpectedAmountCents == taxed.TotalAmountCents,
+            "Le taux Stripe est inclusif et le TTC contractuel reste identique.");
+    }
+
+    private static void VerifyVatMathAndTransition()
+    {
+        var exclusive = BillingVatPolicy.FromExclusive(10_000, 2000);
+        var inclusive = BillingVatPolicy.FromInclusive(12_000, 2000);
+        Ensure(exclusive.TotalAmountCents == 12_000
+            && exclusive.TaxAmountCents == 2_000
+            && inclusive.NetAmountCents == 10_000
+            && inclusive.TaxAmountCents == 2_000,
+            "100 EUR HT et 120 EUR TTC doivent produire le meme detail TVA.");
+        var before = BillingVatPolicy.Resolve("FR",
+            new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc),
+            new DateTime(2026, 9, 2, 0, 0, 0, DateTimeKind.Utc));
+        var after = BillingVatPolicy.Resolve("FR",
+            new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc),
+            new DateTime(2026, 10, 2, 0, 0, 0, DateTimeKind.Utc));
+        var foreign = BillingVatPolicy.Resolve("BE",
+            new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc),
+            new DateTime(2026, 10, 2, 0, 0, 0, DateTimeKind.Utc));
+        Ensure(before.Treatment == BillingVatPolicy.HistoricalFranchise
+            && after.Treatment == BillingVatPolicy.FrenchStandard
+            && !foreign.AutomaticChargeAllowed,
+            "La transition et les operations internationales doivent etre classees explicitement.");
+        var reverse = BillingVatPolicy.ExplicitNonTaxable(BillingVatPolicy.ReverseCharge);
+        Ensure(BillingVatPolicy.Split(12_000, reverse).TaxAmountCents == 0,
+            "L'autoliquidation explicite ne collecte pas de TVA française.");
+    }
 
     // ------------------------------------------------------------------
     // C. Scenario 5 : timeout puis retry
@@ -651,6 +706,16 @@ public static class BillingV2StripeRailTests
             "Un encaissement exact et confirme doit etre reconnu.");
     }
 
+    private static void VerifyTaxMismatchBlocksSettlement()
+    {
+        var result = BillingV2StripeSettlementVerifier.Verify(
+            Session() with { TaxAmountCents = 0 },
+            Expectation() with { ExpectedTaxAmountCents = 674 });
+        Ensure(!result.Settled
+            && result.ReasonCode == "BILLING_V2_STRIPE_TAX_AMOUNT_MISMATCH",
+            "Un montant TTC exact avec TVA Stripe absente reste en revue.");
+    }
+
     private static void VerifyMissingSessionStaysPending()
     {
         var result = BillingV2StripeSettlementVerifier.Verify(
@@ -765,7 +830,9 @@ public static class BillingV2StripeRailTests
                 pricing,
                 Utc(2026, 8, 15),
                 Utc(2026, 9, 15),
-                "billing_v2.billing_event|initial_charge|test-monthly"));
+                "billing_v2.billing_event|initial_charge|test-monthly",
+                new BillingVatDecision(BillingVatPolicy.HistoricalFranchise,
+                    null, true, "VAT_HISTORICAL_FRANCHISE")));
 
         Ensure(
             build.Draft.TotalAmountCents == pricing.TotalDueNowCents,
@@ -806,7 +873,9 @@ public static class BillingV2StripeRailTests
                 pricing,
                 Utc(2026, 8, 15),
                 Utc(2027, 8, 15),
-                "billing_v2.billing_event|initial_charge|test-upfront"));
+                "billing_v2.billing_event|initial_charge|test-upfront",
+                new BillingVatDecision(BillingVatPolicy.HistoricalFranchise,
+                    null, true, "VAT_HISTORICAL_FRANCHISE")));
 
         Ensure(
             build.Draft.TotalAmountCents == pricing.TotalDueNowCents,
@@ -819,6 +888,55 @@ public static class BillingV2StripeRailTests
             BillingV2BillingEventPolicy
                 .ValidateForFinalization(build.Draft).IsValid,
             "L'evenement upfront doit satisfaire les invariants applicatifs.");
+    }
+
+    private static void VerifyTaxedBillingEventKeepsCustomerTotal()
+    {
+        var items = new[] { Item("fr-service", 12000) };
+        var pricing = new BillingV2PricingEngine().Calculate(
+            new BillingV2PricingRequest(items.Select(ToPricingItem).ToArray(),
+                0, BillingV2PaymentModes.Monthly, 1, null, null,
+                Utc(2026, 10, 13)));
+        var decision = BillingVatPolicy.Resolve("FR",
+            Utc(2026, 10, 13), Utc(2026, 11, 13));
+        var build = BillingV2BillingEventFactory.BuildInitialCharge(
+            new BillingV2BillingEventBuildRequest(
+                BillingV2PaymentModes.Monthly, 1, 0, "EUR", items, pricing,
+                Utc(2026, 10, 13), Utc(2026, 11, 13),
+                "billing_v2.billing_event|initial_charge|vat-test", decision));
+        Ensure(build.Draft.GrossAmountCents == 12000
+            && build.Draft.DiscountAmountCents == 0
+            && build.Draft.NetAmountCents == 10000
+            && build.Draft.TaxAmountCents == 2000
+            && build.Draft.TotalAmountCents == 12000
+            && build.Draft.Lines.Single().TaxRateBasisPoints == 2000
+            && BillingV2BillingEventPolicy.ValidateForFinalization(build.Draft).IsValid,
+            "Le BillingEvent français conserve 120 EUR TTC et inscrit 100 EUR HT + 20 EUR TVA.");
+    }
+
+    private static void VerifyTaxRoundingMatchesStripeGroupedLines()
+    {
+        var items = new[]
+        {
+            Item("small-a", 3, BillingV2BillingCadences.OneTime, false),
+            Item("small-b", 3, BillingV2BillingCadences.OneTime, false)
+        };
+        var pricing = new BillingV2PricingEngine().Calculate(
+            new BillingV2PricingRequest(items.Select(ToPricingItem).ToArray(),
+                0, BillingV2PaymentModes.Monthly, 1, null, null,
+                Utc(2026, 10, 13)));
+        var decision = BillingVatPolicy.Resolve("FR",
+            Utc(2026, 10, 13), Utc(2026, 10, 14));
+        var build = BillingV2BillingEventFactory.BuildInitialCharge(
+            new BillingV2BillingEventBuildRequest(
+                BillingV2PaymentModes.Monthly, 1, 0, "EUR", items, pricing,
+                Utc(2026, 10, 13), Utc(2026, 10, 14),
+                "billing_v2.billing_event|initial_charge|rounding", decision));
+        Ensure(build.Draft.TotalAmountCents == 6
+            && build.Draft.NetAmountCents == 5
+            && build.Draft.TaxAmountCents == 1
+            && build.Draft.Lines.Sum(line => line.TaxAmountCents) == 1,
+            "La TVA ventilee doit egaler celle de la ligne Stripe agregee au centime.");
     }
 
     // ------------------------------------------------------------------

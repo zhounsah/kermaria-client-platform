@@ -583,7 +583,8 @@ builder.Services.AddScoped<IBillingV2RenewalService>(
             serviceProvider.GetRequiredService<IBillingV2StripeGateway>(),
             serviceProvider.GetRequiredService<IBillingV2StripeRailService>(),
             serviceProvider.GetRequiredService<
-                ILogger<BillingV2RenewalService>>())
+                ILogger<BillingV2RenewalService>>(),
+            serviceProvider.GetRequiredService<StripeRuntimeConfiguration>())
         : NoOpBillingV2RenewalService.Instance);
 // Phase 3. Declencheur periodique du reconciliateur : OFF par defaut, donc
 // pas meme enregistre tant que le drapeau n'est pas pose.
@@ -2172,7 +2173,8 @@ app.MapPost(
                 payload.CartId ?? string.Empty,
                 payload.ExpectedCartVersion ?? -1,
                 payload.AcceptedQuoteVersion ?? -1,
-                payload.AcceptedCompositionFingerprint ?? string.Empty),
+                payload.AcceptedCompositionFingerprint ?? string.Empty,
+                payload.AcceptedCgvVersionId ?? string.Empty),
             payload.SuccessUrl!,
             payload.CancelUrl!,
             context.GetCorrelationId(),
@@ -2182,7 +2184,7 @@ app.MapPost(
         {
             "CART_CHECKOUT_CREATED" or "CART_CHECKOUT_COMPLETED" => StatusCodes.Status200OK,
             "CART_NOT_FOUND" => StatusCodes.Status404NotFound,
-            "CART_VERSION_CONFLICT" or "CART_QUOTE_CHANGED" or "CART_QUOTE_EXPIRED" or "CART_IMMUTABLE" => StatusCodes.Status409Conflict,
+            "CART_VERSION_CONFLICT" or "CART_QUOTE_CHANGED" or "CART_QUOTE_EXPIRED" or "CART_CGV_VERSION_CHANGED" or "CART_IMMUTABLE" => StatusCodes.Status409Conflict,
             "CART_CHECKOUT_STORAGE_UNAVAILABLE" => StatusCodes.Status503ServiceUnavailable,
             _ => StatusCodes.Status400BadRequest
         };
@@ -2334,7 +2336,8 @@ app.MapPost(
                     IdempotencyKey: payload.IdempotencyKey.Trim(),
                     SuccessUrl: payload.SuccessUrl.Trim(),
                     CancelUrl: payload.CancelUrl.Trim(),
-                    TechnicalRequestId: payload.TechnicalRequestId.Trim()),
+                    TechnicalRequestId: payload.TechnicalRequestId.Trim(),
+                    AcceptedCgvVersionLabel: payload.AcceptedCgvVersionLabel),
                 context.GetCorrelationId(),
                 context.RequestAborted);
         }
@@ -4638,7 +4641,8 @@ app.MapPost(
                     payload.Provider.Trim(),
                     payload.IdempotencyKey.Trim(),
                     payload.SuccessUrl.Trim(),
-                    payload.CancelUrl.Trim()),
+                    payload.CancelUrl.Trim(),
+                    AcceptedCgvVersionLabel: payload.AcceptedCgvVersionLabel),
                 context.GetCorrelationId(),
                 context.RequestAborted);
         }

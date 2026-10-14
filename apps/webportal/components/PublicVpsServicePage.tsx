@@ -227,11 +227,11 @@ function VpsTierCard({
       <h3>{service.name} — {tier.label}</h3>
       {description ? <p className="vps-tier-description">{description}</p> : null}
       <p className="vps-tier-monthly-price">
-        {formatCurrencyFromCents(tier.monthlyAmountCents)} <span>/ mois</span>
+        {formatCurrencyFromCents(tier.monthlyAmountCents)} <span>TTC / mois</span>
       </p>
       {setupFees.map((fee, index) => (
         <p className="vps-tier-setup" key={`${fee.priceCode ?? index}-${fee.amountCents}`}>
-          + {formatCurrencyFromCents(fee.amountCents)} de frais de mise en service
+          + {formatCurrencyFromCents(fee.amountCents)} TTC de frais de mise en service
         </p>
       ))}
       {specifications.length ? (

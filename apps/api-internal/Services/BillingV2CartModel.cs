@@ -188,7 +188,13 @@ public sealed record BillingV2CartQuote(
     IReadOnlyList<BillingV2CartIssue> ConfigurationIssues,
     string CommercialReadiness,
     string ConfigurationReadiness,
-    string ProvisioningReadiness);
+    string ProvisioningReadiness,
+    long SubtotalBeforeTaxCents = 0,
+    long TaxAmountCents = 0,
+    int? TaxRateBasisPoints = null,
+    string TaxTreatment = BillingVatPolicy.ReviewRequired,
+    string? TaxPolicyVersion = null,
+    string? CgvVersionId = null);
 
 public enum BillingV2CartMutationOutcome
 {

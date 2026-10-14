@@ -468,6 +468,8 @@ public sealed class MariaDbCommercialDocumentRepository : ICommercialDocumentRep
                     unit_label,
                     unit_price_cents,
                     tax_rate_basis_points,
+                    tax_treatment,
+                    fiscal_mention_snapshot,
                     line_total_cents,
                     sort_order,
                     created_at,
@@ -481,6 +483,8 @@ public sealed class MariaDbCommercialDocumentRepository : ICommercialDocumentRep
                     @unit_label,
                     @unit_price_cents,
                     @tax_rate_basis_points,
+                    @tax_treatment,
+                    @fiscal_mention,
                     @line_total_cents,
                     @sort_order,
                     @created_at,
@@ -497,6 +501,9 @@ public sealed class MariaDbCommercialDocumentRepository : ICommercialDocumentRep
             command.Parameters.AddWithValue(
                 "@tax_rate_basis_points",
                 DbValue(resolved.TaxRateBasisPoints));
+            command.Parameters.AddWithValue("@tax_treatment", resolved.TaxTreatment);
+            command.Parameters.AddWithValue("@fiscal_mention",
+                BillingVatPolicy.Mention(resolved.TaxTreatment));
             command.Parameters.AddWithValue("@line_total_cents", resolved.LineTotalCents);
             command.Parameters.AddWithValue("@sort_order", resolved.SortOrder);
             command.Parameters.AddWithValue("@created_at", now);
@@ -550,6 +557,7 @@ public sealed class MariaDbCommercialDocumentRepository : ICommercialDocumentRep
             || current.UnitLabel != resolved.UnitLabel
             || current.UnitPriceCents != resolved.UnitPriceCents
             || current.TaxRateBasisPoints != resolved.TaxRateBasisPoints
+            || current.TaxTreatment != resolved.TaxTreatment
             || current.LineTotalCents != resolved.LineTotalCents
             || current.SortOrder != resolved.SortOrder;
         var now = DateTime.UtcNow;
@@ -566,6 +574,8 @@ public sealed class MariaDbCommercialDocumentRepository : ICommercialDocumentRep
                     unit_label = @unit_label,
                     unit_price_cents = @unit_price_cents,
                     tax_rate_basis_points = @tax_rate_basis_points,
+                    tax_treatment = @tax_treatment,
+                    fiscal_mention_snapshot = @fiscal_mention,
                     line_total_cents = @line_total_cents,
                     sort_order = @sort_order,
                     updated_at = @updated_at
@@ -582,6 +592,9 @@ public sealed class MariaDbCommercialDocumentRepository : ICommercialDocumentRep
             command.Parameters.AddWithValue(
                 "@tax_rate_basis_points",
                 DbValue(resolved.TaxRateBasisPoints));
+            command.Parameters.AddWithValue("@tax_treatment", resolved.TaxTreatment);
+            command.Parameters.AddWithValue("@fiscal_mention",
+                BillingVatPolicy.Mention(resolved.TaxTreatment));
             command.Parameters.AddWithValue("@line_total_cents", resolved.LineTotalCents);
             command.Parameters.AddWithValue("@sort_order", resolved.SortOrder);
             command.Parameters.AddWithValue("@updated_at", now);
@@ -787,6 +800,8 @@ public sealed class MariaDbCommercialDocumentRepository : ICommercialDocumentRep
                 unit_label,
                 unit_price_cents,
                 tax_rate_basis_points,
+                tax_treatment,
+                fiscal_mention_snapshot,
                 line_total_cents,
                 sort_order,
                 created_at,
@@ -808,8 +823,14 @@ public sealed class MariaDbCommercialDocumentRepository : ICommercialDocumentRep
             // emise garde la formulation en vigueur au moment ou elle a ete
             // etablie, meme si le texte est modifie ensuite.
             var fiscal = FiscalPolicy.Resolve(
+                reader.IsDBNull(reader.GetOrdinal("tax_treatment"))
+                    ? null
+                    : reader.GetString("tax_treatment"),
                 taxRateBasisPoints,
-                DateTime.SpecifyKind(reader.GetDateTime("created_at"), DateTimeKind.Utc));
+                DateTime.SpecifyKind(reader.GetDateTime("created_at"), DateTimeKind.Utc),
+                reader.IsDBNull(reader.GetOrdinal("fiscal_mention_snapshot"))
+                    ? null
+                    : reader.GetString("fiscal_mention_snapshot"));
             lines.Add(new CommercialDocumentLine(
                 MariaDbIdentifierReader.ReadRequired(reader, "id"),
                 reader.GetString("label"),
@@ -823,7 +844,10 @@ public sealed class MariaDbCommercialDocumentRepository : ICommercialDocumentRep
                 reader.GetInt32("line_total_cents"),
                 reader.GetInt32("sort_order"),
                 ToUtcIso(reader.GetDateTime("created_at")),
-                ToUtcIso(reader.GetDateTime("updated_at"))));
+                ToUtcIso(reader.GetDateTime("updated_at")),
+                reader.IsDBNull(reader.GetOrdinal("tax_treatment"))
+                    ? null
+                    : reader.GetString("tax_treatment")));
         }
 
         return lines;
@@ -960,6 +984,7 @@ public sealed class MariaDbCommercialDocumentRepository : ICommercialDocumentRep
                 unit_label,
                 unit_price_cents,
                 tax_rate_basis_points,
+                tax_treatment,
                 line_total_cents,
                 sort_order
             FROM commercial_document_lines
@@ -985,6 +1010,9 @@ public sealed class MariaDbCommercialDocumentRepository : ICommercialDocumentRep
             reader.IsDBNull(reader.GetOrdinal("tax_rate_basis_points"))
                 ? null
                 : reader.GetInt32("tax_rate_basis_points"),
+            reader.IsDBNull(reader.GetOrdinal("tax_treatment"))
+                ? null
+                : reader.GetString("tax_treatment"),
             reader.GetInt32("line_total_cents"),
             reader.GetInt32("sort_order"));
     }
@@ -1020,6 +1048,7 @@ public sealed class MariaDbCommercialDocumentRepository : ICommercialDocumentRep
             unitLabel,
             unitPriceCents,
             line.TaxRateBasisPoints,
+            line.TaxTreatment,
             lineTotalCents,
             line.SortOrder);
     }
@@ -1187,6 +1216,7 @@ public sealed class MariaDbCommercialDocumentRepository : ICommercialDocumentRep
         string UnitLabel,
         int UnitPriceCents,
         int? TaxRateBasisPoints,
+        string? TaxTreatment,
         int LineTotalCents,
         int SortOrder);
 
@@ -1197,6 +1227,7 @@ public sealed class MariaDbCommercialDocumentRepository : ICommercialDocumentRep
         string UnitLabel,
         int UnitPriceCents,
         int? TaxRateBasisPoints,
+        string TaxTreatment,
         int LineTotalCents,
         int SortOrder);
 

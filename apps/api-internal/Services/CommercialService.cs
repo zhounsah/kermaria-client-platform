@@ -75,7 +75,8 @@ public sealed record ValidatedCommercialDocumentLine(
     string? UnitLabel,
     int? UnitPriceCents,
     int? TaxRateBasisPoints,
-    int SortOrder);
+    int SortOrder,
+    string TaxTreatment);
 
 public interface ICommercialService
 {
@@ -451,6 +452,24 @@ public sealed partial class CommercialService : ICommercialService
         {
             throw new PortalValidationException();
         }
+        var taxTreatment = payload.TaxTreatment?.Trim();
+        if (taxRateBasisPoints is > 0)
+        {
+            if (taxRateBasisPoints != BillingVatPolicy.FrenchStandardRateBasisPoints)
+            {
+                throw new PortalValidationException();
+            }
+            taxTreatment ??= BillingVatPolicy.FrenchStandard;
+            if (taxTreatment != BillingVatPolicy.FrenchStandard)
+            {
+                throw new PortalValidationException();
+            }
+        }
+        else if (taxTreatment is not (BillingVatPolicy.ReverseCharge
+            or BillingVatPolicy.Exempt or BillingVatPolicy.OutsideScope))
+        {
+            throw new PortalValidationException();
+        }
 
         var sortOrder = payload.SortOrder ?? 0;
         if (sortOrder is < 0 or > MaxSortOrder)
@@ -473,7 +492,8 @@ public sealed partial class CommercialService : ICommercialService
             ValidateNullableText(payload.UnitLabel, 40),
             unitPriceCents,
             taxRateBasisPoints,
-            sortOrder);
+            sortOrder,
+            taxTreatment);
     }
 
     private static string ValidateIdentifier(string value)

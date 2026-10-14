@@ -62,6 +62,8 @@ public sealed class BillingV2PortalSubscriptionProjection
         await using var command = connection.CreateCommand();
         command.CommandText = SelectSql;
         command.Parameters.AddWithValue("@customer_id", customerId);
+        command.Parameters.AddWithValue("@vat_cutoff_utc",
+            BillingVatPolicy.EffectiveFromUtc);
 
         await using var reader = await command.ExecuteReaderAsync(
             cancellationToken);
@@ -81,6 +83,8 @@ public sealed class BillingV2PortalSubscriptionProjection
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = AdminSelectSql;
+        command.Parameters.AddWithValue("@vat_cutoff_utc",
+            BillingVatPolicy.EffectiveFromUtc);
 
         await using var reader = await command.ExecuteReaderAsync(
             cancellationToken);
@@ -124,7 +128,10 @@ public sealed class BillingV2PortalSubscriptionProjection
             COALESCE(totals.recurring_non_discountable_cents, 0)
                 AS recurring_non_discountable_cents,
             COALESCE(totals.one_time_cents, 0) AS one_time_cents,
-            totals.tax_rate_basis_points,
+            COALESCE(totals.tax_rate_basis_points,
+                CASE WHEN subscription.created_at >= @vat_cutoff_utc
+                      AND customer.country IN ('France', 'FR')
+                     THEN 2000 ELSE NULL END) AS tax_rate_basis_points,
             subscription.started_at,
             subscription.renews_at,
             subscription.current_period_ends_at,
@@ -320,7 +327,10 @@ public sealed class BillingV2PortalSubscriptionProjection
             COALESCE(totals.recurring_non_discountable_cents, 0)
                 AS recurring_non_discountable_cents,
             COALESCE(totals.one_time_cents, 0) AS one_time_cents,
-            totals.tax_rate_basis_points,
+            COALESCE(totals.tax_rate_basis_points,
+                CASE WHEN subscription.created_at >= @vat_cutoff_utc
+                      AND customer.country IN ('France', 'FR')
+                     THEN 2000 ELSE NULL END) AS tax_rate_basis_points,
             subscription.started_at,
             subscription.renews_at,
             subscription.current_period_ends_at,

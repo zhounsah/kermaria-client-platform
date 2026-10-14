@@ -1,5 +1,13 @@
 # Feuille de route
 
+> CANDIDATE EN PRÉPARATION - 2026-10-14
+>
+> `v2.1.1` regroupe la mise en conformité TVA, les archives légales et la
+> conservation des PDF BPCE. Les binaires et contenus DEV sont en recette ;
+> la fermeture des achats PROD, les modifications BPCE/Stripe Live, la
+> migration 102 et la livraison PROD attendent une autorisation distincte.
+> Voir [`releases/TVA_PROD_PREPARATION_2026-10-14.md`](releases/TVA_PROD_PREPARATION_2026-10-14.md).
+
 > POINT DE REPÈRE ACTUEL - 2026-10-07
 >
 > Production : `v2.1.0` sur SRV-12/SRV-13 depuis le 2026-10-07. La refonte UX,

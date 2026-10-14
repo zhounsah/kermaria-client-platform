@@ -219,6 +219,26 @@ public sealed class MariaDbBpceInvoicingRepository : IBpceInvoicingRepository
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task MarkInvoicePaidAsync(
+        string commercialDocumentId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(
+            _configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var cmd = connection.CreateCommand();
+        // Ne jamais toucher aux octets, à l'empreinte ou au numéro fiscal
+        // quand BPCE confirme simplement le règlement.
+        cmd.CommandText = """
+            UPDATE bpce_invoices
+            SET status = 'paid'
+            WHERE commercial_document_id = @documentId
+            """;
+        cmd.Parameters.AddWithValue("documentId", commercialDocumentId);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task<byte[]?> GetInvoicePdfAsync(
         string commercialDocumentId,
         CancellationToken cancellationToken)

@@ -104,7 +104,8 @@ public sealed record BillingV2BillingEventBuildRequest(
     BillingV2PricingResult Pricing,
     DateTime PeriodStartUtc,
     DateTime PeriodEndUtc,
-    string IdempotencyKeyCanonical);
+    string IdempotencyKeyCanonical,
+    BillingVatDecision VatDecision);
 
 public sealed record BillingV2BillingEventBuildResult(
     BillingV2BillingEventDraft Draft,
@@ -120,11 +121,16 @@ public sealed record BillingV2BillingEventBuildResult(
 /// </summary>
 public static class BillingV2BillingEventFactory
 {
-    public const string PricingEngineVersion = "billing-v2-pricing-engine-1";
+    public const string PricingEngineVersion = "billing-v2-pricing-engine-2-vat";
 
     public static BillingV2BillingEventBuildResult BuildInitialCharge(
         BillingV2BillingEventBuildRequest request)
     {
+        if (!request.VatDecision.AutomaticChargeAllowed)
+        {
+            throw new InvalidOperationException(request.VatDecision.ReasonCode);
+        }
+
         var upfront = string.Equals(
             request.PaymentMode,
             BillingV2PaymentModes.Upfront,
@@ -179,13 +185,16 @@ public static class BillingV2BillingEventFactory
         long gross = 0;
         long discount = 0;
         long net = 0;
+        long tax = 0;
+        long total = 0;
         long recurring = 0;
         long oneTimeTotal = 0;
         for (var index = 0; index < seeds.Count; index++)
         {
             var seed = seeds[index];
             var allocated = allocation[index];
-            var lineNet = checked(seed.GrossAmountCents - allocated);
+            var lineTotal = checked(seed.GrossAmountCents - allocated);
+            var fiscal = BillingVatPolicy.Split(lineTotal, request.VatDecision);
             lines.Add(new BillingV2BillingEventLineDraft(
                 seed.DisplayOrder,
                 seed.Item.ServiceCode,
@@ -195,27 +204,47 @@ public static class BillingV2BillingEventFactory
                 seed.UnitAmountCents,
                 seed.GrossAmountCents,
                 allocated,
-                lineNet,
-                // Franchise en base de TVA : aucune taxe sur le rail V2.
-                TaxAmountCents: 0,
-                lineNet,
-                request.Currency));
+                fiscal.NetAmountCents,
+                fiscal.TaxAmountCents,
+                fiscal.TotalAmountCents,
+                request.Currency,
+                request.VatDecision.RateBasisPoints,
+                request.VatDecision.Treatment));
 
             gross = checked(gross + seed.GrossAmountCents);
             discount = checked(discount + allocated);
-            net = checked(net + lineNet);
+            net = checked(net + fiscal.NetAmountCents);
+            tax = checked(tax + fiscal.TaxAmountCents);
+            total = checked(total + fiscal.TotalAmountCents);
             if (string.Equals(
                     seed.Cadence,
                     BillingV2LineCadences.OneTime,
                     StringComparison.Ordinal))
             {
-                oneTimeTotal = checked(oneTimeTotal + lineNet);
+                oneTimeTotal = checked(oneTimeTotal + lineTotal);
             }
             else
             {
-                recurring = checked(recurring + lineNet);
+                recurring = checked(recurring + lineTotal);
             }
         }
+
+        var groupedTaxes = BillingVatPolicy.AllocateGroupedInclusiveTax(
+            lines.Select(line => line.TotalAmountCents).ToArray(),
+            seeds.Select(seed => seed.Cadence != BillingV2LineCadences.OneTime)
+                .ToArray(),
+            request.VatDecision);
+        for (var index = 0; index < lines.Count; index++)
+        {
+            var line = lines[index];
+            lines[index] = line with
+            {
+                NetAmountCents = line.TotalAmountCents - groupedTaxes[index],
+                TaxAmountCents = groupedTaxes[index]
+            };
+        }
+        net = lines.Sum(line => line.NetAmountCents);
+        tax = lines.Sum(line => line.TaxAmountCents);
 
         var draft = new BillingV2BillingEventDraft(
             BillingV2BillingEventTypes.InitialCharge,
@@ -224,8 +253,8 @@ public static class BillingV2BillingEventFactory
             gross,
             discount,
             net,
-            TaxAmountCents: 0,
-            net,
+            tax,
+            total,
             PricingEngineVersion,
             request.IdempotencyKeyCanonical,
             lines);
@@ -233,11 +262,11 @@ public static class BillingV2BillingEventFactory
         // Garde-fou : la somme des lignes doit retomber exactement sur le total
         // annonce par le Pricing Engine. Sans ce controle, une divergence de
         // ventilation passerait inapercue jusqu'a la facture.
-        if (net != request.Pricing.TotalDueNowCents)
+        if (total != request.Pricing.TotalDueNowCents)
         {
             throw new InvalidOperationException(
                 "BILLING_V2_EVENT_TOTAL_DOES_NOT_MATCH_PRICING_ENGINE:"
-                + $" lines={net} engine={request.Pricing.TotalDueNowCents}");
+                + $" lines={total} engine={request.Pricing.TotalDueNowCents}");
         }
 
         return new BillingV2BillingEventBuildResult(
@@ -398,7 +427,8 @@ public sealed record BillingV2StripeCheckoutRequest(
     /// interdit. Aucun client n'est cree par ce chemin - on ne fait que
     /// reutiliser un identifiant persiste.
     /// </summary>
-    string? ProviderCustomerId = null);
+    string? ProviderCustomerId = null,
+    string? InclusiveTaxRateId = null);
 
 public sealed record BillingV2FinalizedBillingEvent(
     string Id,
@@ -413,7 +443,8 @@ public sealed record BillingV2FinalizedBillingEvent(
     long RecurringAmountCents,
     long OneTimeAmountCents,
     long TaxAmountCents,
-    int LineCount);
+    int LineCount,
+    bool FrenchTaxable = false);
 
 /// <summary>
 /// B. Aucun checkout provider V2 ne part sans un BillingEvent finalise et
@@ -471,14 +502,6 @@ public static class BillingV2StripeDispatchGuard
                 "BILLING_V2_STRIPE_DISPATCH_AMOUNT_DECOMPOSITION_MISMATCH");
         }
 
-        // Franchise en base de TVA. Une TVA non nulle exigerait de declarer la
-        // fiscalite a Stripe : hors perimetre Phase 2, donc fail closed.
-        if (billingEvent.TaxAmountCents != 0)
-        {
-            return BillingV2FinancialDecision.Refused(
-                "BILLING_V2_STRIPE_DISPATCH_TAX_NOT_SUPPORTED");
-        }
-
         return string.Equals(
                 billingEvent.SettlementStatus,
                 BillingV2SettlementStatuses.Settled,
@@ -510,12 +533,22 @@ public static class BillingV2StripeCheckoutRequestFactory
         string customerEmail,
         string successUrl,
         string cancelUrl,
-        string? providerCustomerId = null)
+        string? providerCustomerId = null,
+        string? inclusiveTaxRateId = null)
     {
         var guard = BillingV2StripeDispatchGuard.Evaluate(billingEvent);
         if (!guard.IsValid)
         {
             throw new InvalidOperationException(guard.ReasonCode);
+        }
+        var taxable = billingEvent.FrenchTaxable
+            || billingEvent.TaxAmountCents > 0;
+        if (taxable
+            && (string.IsNullOrWhiteSpace(inclusiveTaxRateId)
+                || !inclusiveTaxRateId.StartsWith("txr_", StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException(
+                "BILLING_V2_STRIPE_INCLUSIVE_TAX_RATE_REQUIRED");
         }
 
         var upfront = string.Equals(
@@ -549,6 +582,17 @@ public static class BillingV2StripeCheckoutRequestFactory
             throw new InvalidOperationException(
                 "BILLING_V2_STRIPE_DISPATCH_TOTAL_INVALID");
         }
+        if (taxable)
+        {
+            var providerTax = lines.Sum(line => BillingVatPolicy.FromInclusive(
+                line.UnitAmountCents,
+                BillingVatPolicy.FrenchStandardRateBasisPoints).TaxAmountCents);
+            if (providerTax != billingEvent.TaxAmountCents)
+            {
+                throw new InvalidOperationException(
+                    "BILLING_V2_STRIPE_TAX_ROUNDING_MISMATCH");
+            }
+        }
 
         // Le mode suit les lignes REELLEMENT construites, pas le mode de
         // reglement contractuel. Une selection purement ponctuelle (aucun
@@ -580,7 +624,8 @@ public static class BillingV2StripeCheckoutRequestFactory
             providerRequestKey,
             string.IsNullOrWhiteSpace(providerCustomerId)
                 ? null
-                : providerCustomerId.Trim());
+                : providerCustomerId.Trim(),
+            taxable ? inclusiveTaxRateId : null);
     }
 
     /// <summary>
@@ -619,11 +664,24 @@ public static class BillingV2StripeCheckoutRequestFactory
                 line.UnitAmountCents.ToString();
             parameters[$"{prefix}[price_data][product_data][name]"] =
                 line.Description;
+            if (request.InclusiveTaxRateId is { Length: > 0 } taxRateId)
+            {
+                parameters[$"{prefix}[price_data][tax_behavior]"] =
+                    "inclusive";
+                parameters[$"{prefix}[tax_rates][0]"] = taxRateId;
+            }
             if (line.Recurring)
             {
                 parameters[$"{prefix}[price_data][recurring][interval]"] =
                     "month";
             }
+        }
+
+        if (request.InclusiveTaxRateId is { Length: > 0 } recurringTaxRateId
+            && request.Mode == BillingV2StripeModes.Subscription)
+        {
+            parameters["subscription_data[default_tax_rates][0]"] =
+                recurringTaxRateId;
         }
 
         foreach (var (key, value) in request.Metadata)
@@ -661,7 +719,8 @@ public sealed record BillingV2StripeSessionSnapshot(
     string? SessionStatus,
     string? CustomerEmail,
     IReadOnlyDictionary<string, string> Metadata,
-    string? ApprovalUrl = null);
+    string? ApprovalUrl = null,
+    long? TaxAmountCents = null);
 
 public sealed record BillingV2StripeApprovalUrlRecovery(
     string? ApprovalUrl,
@@ -737,7 +796,8 @@ public sealed record BillingV2StripeVerificationExpectation(
     string ExpectedCurrency,
     long ExpectedAmountCents,
     string ExpectedMode,
-    string? ExpectedCustomerEmail);
+    string? ExpectedCustomerEmail,
+    long? ExpectedTaxAmountCents = null);
 
 public sealed record BillingV2StripeVerificationResult(
     bool Settled,
@@ -858,6 +918,12 @@ public static class BillingV2StripeSettlementVerifier
                 snapshot.AmountTotalCents,
                 snapshot.Currency.Trim().ToUpperInvariant(),
                 settlement.Diagnostic);
+        }
+
+        if (expectation.ExpectedTaxAmountCents.HasValue
+            && snapshot.TaxAmountCents != expectation.ExpectedTaxAmountCents)
+        {
+            return Reconcile("BILLING_V2_STRIPE_TAX_AMOUNT_MISMATCH");
         }
 
         return new BillingV2StripeVerificationResult(

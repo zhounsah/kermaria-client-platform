@@ -9,10 +9,9 @@ type CommercialAmountOptions = {
 
 export function formatCommercialAmountFromCents(
   amountCents: number,
-  { fiscalRegime, suffix = "" }: CommercialAmountOptions,
+  { suffix = "" }: CommercialAmountOptions,
 ) {
-  const taxLabel = fiscalRegime === "standard" ? " HT" : "";
-  return `${formatCurrencyFromCents(amountCents)}${taxLabel}${suffix}`;
+  return `${formatCurrencyFromCents(amountCents)} TTC${suffix}`;
 }
 
 export function formatFiscalMention(
@@ -23,9 +22,20 @@ export function formatFiscalMention(
     return fiscalMention;
   }
 
-  return fiscalRegime === "standard"
-    ? "TVA au taux en vigueur."
-    : "TVA non applicable, art. 293 B du CGI.";
+  switch (fiscalRegime) {
+    case "standard":
+      return "TVA au taux en vigueur.";
+    case "franchise_base":
+      return "TVA non applicable, art. 293 B du CGI.";
+    case "reverse_charge":
+      return "Autoliquidation de la TVA par le preneur.";
+    case "exempt":
+      return "Exonération de TVA selon le fondement indiqué sur le document.";
+    case "outside_scope":
+      return "Opération hors du champ de la TVA française.";
+    default:
+      return "Traitement fiscal à vérifier avant émission.";
+  }
 }
 
 export function shouldShowVatBreakdown(fiscalRegime: FiscalRegime) {

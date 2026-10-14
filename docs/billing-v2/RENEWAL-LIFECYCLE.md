@@ -166,4 +166,7 @@ provider est déjà annulé.
 ## 10. Hors périmètre
 
 Customer Credit Ledger, upgrades, downgrades, remboursements partiels,
-chargebacks, avoir BPCE/reprise comptable, PayPal V2, TVA non nulle.
+chargebacks, avoir BPCE/reprise comptable, PayPal V2, taxation automatique
+d'une opération non française ou non qualifiée. Un renouvellement français
+taxable exige l'instantané fiscal initial et le taux Stripe inclusif attendu ;
+un abonnement existant sans ces preuves part en revue humaine sans repricing.

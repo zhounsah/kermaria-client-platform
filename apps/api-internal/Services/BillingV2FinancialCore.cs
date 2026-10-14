@@ -172,7 +172,9 @@ public sealed record BillingV2BillingEventLineDraft(
     long NetAmountCents,
     long TaxAmountCents,
     long TotalAmountCents,
-    string Currency);
+    string Currency,
+    int? TaxRateBasisPoints = null,
+    string TaxTreatment = BillingVatPolicy.HistoricalFranchise);
 
 public sealed record BillingV2BillingEventDraft(
     string EventType,
@@ -256,7 +258,9 @@ public static class BillingV2BillingEventPolicy
                 "BILLING_V2_EVENT_DISCOUNT_EXCEEDS_GROSS");
         }
 
-        if (draft.NetAmountCents
+        // Le prix et la remise sont TTC. Le net est le HT obtenu après
+        // ventilation de la TVA incluse dans le montant effectivement payé.
+        if (draft.TotalAmountCents
             != draft.GrossAmountCents - draft.DiscountAmountCents)
         {
             return BillingV2FinancialDecision.Refused(
@@ -351,7 +355,7 @@ public static class BillingV2BillingEventPolicy
                 line.ServiceCode);
         }
 
-        if (line.NetAmountCents
+        if (line.TotalAmountCents
             != line.GrossAmountCents - line.DiscountAllocatedAmountCents)
         {
             return BillingV2FinancialDecision.Refused(

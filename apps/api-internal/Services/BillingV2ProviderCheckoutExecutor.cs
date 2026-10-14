@@ -125,6 +125,20 @@ public sealed class BillingV2ProviderCheckoutExecutor
             BillingV2ProviderCheckoutPayload payload,
             CancellationToken cancellationToken)
     {
+        // Ancien chemin Price ID : il ne porte ni qualification fiscale ni
+        // instantane de TVA. Aucun nouvel encaissement n'est permis apres la
+        // bascule tant que ce contrat n'est pas adapte explicitement.
+        if (DateTime.UtcNow >= BillingVatPolicy.EffectiveFromUtc)
+        {
+            return new BillingV2ProviderCheckoutExecutionResult(
+                false,
+                "BILLING_V2_PRICE_ID_TAX_CLASSIFICATION_REQUIRED",
+                ProviderCheckoutId: null,
+                ProviderSubscriptionId: null,
+                ApprovalUrl: null,
+                ErrorMessage: "Le chemin Price ID requiert une qualification fiscale.");
+        }
+
         if (!_stripe.IsConfigured)
         {
             return new BillingV2ProviderCheckoutExecutionResult(

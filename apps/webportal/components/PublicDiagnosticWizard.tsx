@@ -394,8 +394,8 @@ function DiagnosticOffer({
     {selection && recommendation.selectedStorageGb ? <p className="diagnostic-offer-description">Espace conseillé pour vos fichiers : {recommendation.selectedStorageGb} Go.</p> : null}
     {quote ? <div className="diagnostic-offer-price">
       <span>Tarif calculé</span>
-      <strong>{formatCurrencyFromCents(quote.monthlyAfterDiscountCents)} / mois</strong>
-      {quote.oneTimeCents > 0 ? <small>{formatCurrencyFromCents(quote.oneTimeCents)} à la mise en service.</small> : null}
+      <strong>{formatCurrencyFromCents(quote.monthlyAfterDiscountCents)} TTC / mois</strong>
+      {quote.oneTimeCents > 0 ? <small>{formatCurrencyFromCents(quote.oneTimeCents)} TTC à la mise en service.</small> : null}
     </div> : quoteError ? <p className="diagnostic-offer-error">Le tarif n&apos;a pas pu être calculé pour le moment. Réessayez dans un instant.</p> : <p className="diagnostic-offer-loading">Nous vérifions le prix actuel…</p>}
     {href && quoteAvailable ? <Link className="button diagnostic-offer-cta" href={href}>Voir cette offre</Link> : null}
     {quote && !quoteAvailable ? <p className="diagnostic-offer-error">Cette offre n&apos;est plus disponible à la souscription en ligne. Recommencez le diagnostic ou contactez-nous pour faire le point.</p> : null}

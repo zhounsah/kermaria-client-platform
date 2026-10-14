@@ -78,12 +78,12 @@ export function CatalogHome({
                 return <tr key={service.id}>
                   <td><span className={styles.primaryCell}><strong>{service.name}</strong><code>{service.code}</code></span></td>
                   <td><CatalogStatus value={service.status} /></td><td>{service.publicVisible ? "Publique" : "Interne"}</td><td>{service.tiers.length}</td>
-                  <td>{starting === null ? "—" : `${formatCurrencyFromCents(starting)} / mois`}</td><td>{service.selfServiceOrderable ? "Oui" : "Non"}</td>
+                  <td>{starting === null ? "—" : `${formatCurrencyFromCents(starting)} TTC / mois`}</td><td>{service.selfServiceOrderable ? "Oui" : "Non"}</td>
                   <td><Link className="table-action" href={`/admin/catalog/services/${service.id}`}>Modifier</Link></td>
                 </tr>;
               }) : section === "formules" ? snapshot.presets.filter((item) => rows.some((row) => row.id === item.id)).map((preset) => <tr key={preset.id}>
                 <td><span className={styles.primaryCell}><strong>{preset.name}</strong><code>{preset.code}</code></span></td><td><CatalogStatus value={preset.status} /></td><td>{preset.isPublic ? "Visible" : "Masquée"}</td><td>{preset.items.length}</td>
-                <td>{baselineByCode[preset.code] === undefined ? "—" : `${formatCurrencyFromCents(baselineByCode[preset.code])} / mois`}</td>
+                <td>{baselineByCode[preset.code] === undefined ? "—" : `${formatCurrencyFromCents(baselineByCode[preset.code])} TTC / mois`}</td>
                 <td><Link className="table-action" href={`/admin/catalog/formules/${preset.id}`}>Modifier</Link></td>
               </tr>) : snapshot.commitments.filter((item) => rows.some((row) => row.id === item.id)).map((commitment) => <tr key={commitment.id}>
                 <td><span className={styles.primaryCell}><strong>{commitment.name}</strong><code>{commitment.code}</code></span></td><td>{commitment.commitmentMonths} mois</td><td><CatalogStatus value={commitment.status} /></td><td>{commitment.allowMonthlyPayment ? "Autorisé" : "Non"}</td><td>{commitment.allowUpfrontPayment ? "Autorisé" : "Non"}</td>

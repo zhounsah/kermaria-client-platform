@@ -45,7 +45,7 @@ export function PublicPackCard({
       <div className="public-pack-pricing">
         <div className="public-pack-price-main">
           <strong>
-            {formatCurrencyFromCents(pack.baselineMonthlyAmountCents)} / mois
+            {formatCurrencyFromCents(pack.baselineMonthlyAmountCents)} TTC / mois
           </strong>
           <span>
             Configuration recommandée, sans engagement. Le tarif définitif —

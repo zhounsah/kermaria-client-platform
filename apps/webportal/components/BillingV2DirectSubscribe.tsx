@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import type {
@@ -38,6 +39,7 @@ import {
  */
 type Props = {
   catalog: BillingV2PublicCatalog;
+  cgvVersionLabel: string | null;
 };
 
 type Draft = Map<string, { tierCode: string | null; quantity: number }>;
@@ -73,11 +75,12 @@ const MONTHLY_FALLBACK: PriceShape = {
   chargeTrigger: "initial_subscription",
 };
 
-export function BillingV2DirectSubscribe({ catalog }: Props) {
+export function BillingV2DirectSubscribe({ catalog, cgvVersionLabel }: Props) {
   const services = useMemo(() => orderServices(catalog), [catalog]);
   const [draft, setDraft] = useState<Draft>(() => new Map());
   const [outcome, setOutcome] = useState<QuoteOutcome | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [acceptedCgv, setAcceptedCgv] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitStatus, setSubmitStatus] = useState<string | null>(null);
 
@@ -195,7 +198,7 @@ export function BillingV2DirectSubscribe({ catalog }: Props) {
   }
 
   async function submit() {
-    if (!selection || submitting) {
+    if (!selection || !current?.quote?.checkoutAvailable || !acceptedCgv || !cgvVersionLabel || submitting) {
       return;
     }
 
@@ -204,7 +207,7 @@ export function BillingV2DirectSubscribe({ catalog }: Props) {
     setSubmitStatus(null);
 
     const idempotencyKey = crypto.randomUUID();
-    const body = JSON.stringify({ ...selection, rail: "stripe" });
+    const body = JSON.stringify({ ...selection, rail: "stripe", acceptedCgvVersionLabel: cgvVersionLabel });
 
     try {
       // La creation de la session provider est asynchrone. Tant que l'outbox
@@ -388,7 +391,7 @@ export function BillingV2DirectSubscribe({ catalog }: Props) {
                   <span>{line.label}</span>
                   <span>
                     {formatCurrencyFromCents(line.amountCents)}
-                    {line.billingCadence === "monthly" ? " / mois" : ""}
+                    {line.billingCadence === "monthly" ? " TTC / mois" : " TTC"}
                   </span>
                 </li>
               ))}
@@ -399,11 +402,11 @@ export function BillingV2DirectSubscribe({ catalog }: Props) {
                   current.quote.monthlyAfterDiscountCents,
                 )}
               </strong>
-              {" par mois"}
+              {" TTC par mois"}
             </p>
             {current.quote.oneTimeCents > 0 ? (
               <p className="subscribe-direct-onetime">
-                {formatCurrencyFromCents(current.quote.oneTimeCents)} à la mise
+                {formatCurrencyFromCents(current.quote.oneTimeCents)} TTC à la mise
                 en service
               </p>
             ) : null}
@@ -417,9 +420,14 @@ export function BillingV2DirectSubscribe({ catalog }: Props) {
           <p className="subscribe-direct-error">{submitError}</p>
         ) : null}
 
+        <label className="subscribe-direct-note">
+          <input checked={acceptedCgv} disabled={!cgvVersionLabel} onChange={(event) => setAcceptedCgv(event.target.checked)} type="checkbox" />
+          {" "}J’accepte les <Link href="/cgv" target="_blank">CGV en vigueur</Link>{cgvVersionLabel ? ` (${cgvVersionLabel})` : ""}.
+        </label>
+        {current?.quote && !current.quote.checkoutAvailable ? <p className="subscribe-direct-note" role="status">Le paiement en ligne est temporairement indisponible pendant la vérification de la facturation.</p> : null}
         <button
           className="button"
-          disabled={!selection || !current?.quote || submitting}
+          disabled={!selection || !current?.quote?.checkoutAvailable || !acceptedCgv || !cgvVersionLabel || submitting}
           onClick={() => void submit()}
           type="button"
         >

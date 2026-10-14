@@ -89,6 +89,13 @@ export async function POST(request: NextRequest) {
       400,
     );
   }
+  const acceptedCgvVersionLabel = (body as { acceptedCgvVersionLabel?: unknown })
+    ?.acceptedCgvVersionLabel;
+  if (typeof acceptedCgvVersionLabel !== "string"
+    || !acceptedCgvVersionLabel.startsWith("Version du :")
+    || acceptedCgvVersionLabel.length > 160) {
+    return fail("BILLING_V2_CGV_ACCEPTANCE_REQUIRED", "Acceptez les CGV en vigueur avant de continuer.", 400);
+  }
 
   // Seul le rail Stripe est ouvert a la souscription V2 native : le rail
   // PayPal n'a pas ete valide pour ce parcours.
@@ -138,6 +145,7 @@ export async function POST(request: NextRequest) {
         idempotencyKey: string;
         successUrl: string;
         cancelUrl: string;
+        acceptedCgvVersionLabel: string;
       }
     >(
       "/internal/portal/billing-v2/subscriptions/checkout",
@@ -147,6 +155,7 @@ export async function POST(request: NextRequest) {
         idempotencyKey,
         successUrl: `${portalUrl}${returnPath}`,
         cancelUrl: `${portalUrl}${cancelPath}`,
+        acceptedCgvVersionLabel,
       },
       sessionToken,
       correlationId,

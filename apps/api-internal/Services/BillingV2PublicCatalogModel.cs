@@ -31,6 +31,11 @@ public sealed record BillingV2PublicPriceComponent(
     string? ServicePriceId = null,
     string? PriceCode = null)
 {
+    // Projection indicative française avant remise. Le Checkout requalifie
+    // toujours l'operation avec le pays du client et ses propres instantanes.
+    public long FrenchNetAmountCents => BillingVatPolicy.FromInclusive(
+        AmountCents, BillingVatPolicy.FrenchStandardRateBasisPoints).NetAmountCents;
+
     public bool IsRecurring => string.Equals(
         BillingCadence,
         BillingV2BillingCadences.Monthly,
@@ -63,6 +68,11 @@ public sealed record BillingV2PublicTier(
     bool PublicSelectable,
     IReadOnlyList<BillingV2PublicPriceComponent>? PriceComponents = null)
 {
+    public long MonthlyFrenchNetAmountCents => Components
+        .Where(component => component.IsRecurring
+            && component.AppliesToInitialSubscription)
+        .Sum(component => component.FrenchNetAmountCents);
+
     /// <summary>
     /// Attributs commerciaux et techniques du palier, exclusivement destines
     /// a l'affichage. Ils ne participent jamais a la resolution du prix, qui
@@ -254,6 +264,11 @@ public sealed record BillingV2PublicService(
     // Libellé du contrôle de sélection ; présentation catalogue uniquement.
     string? TierSelectorLabel = null)
 {
+    public long FlatMonthlyFrenchNetAmountCents => FlatComponents
+        .Where(component => component.IsRecurring
+            && component.AppliesToInitialSubscription)
+        .Sum(component => component.FrenchNetAmountCents);
+
     /// <summary>
     /// Composantes tarifaires du service sans palier. Vide quand le service
     /// n'est tarife que par palier.
@@ -548,7 +563,12 @@ public sealed record BillingV2PublicQuote(
     bool MatchesPresetBaseline,
     bool CheckoutAvailable,
     string CheckoutMode,
-    string CheckoutReasonCode);
+    string CheckoutReasonCode,
+    long SubtotalBeforeTaxCents = 0,
+    long TaxAmountCents = 0,
+    int? TaxRateBasisPoints = null,
+    string TaxTreatment = BillingVatPolicy.ReviewRequired,
+    string TaxPolicyVersion = BillingVatPolicy.PolicyVersion);
 
 public static class BillingV2PublicCheckoutModes
 {

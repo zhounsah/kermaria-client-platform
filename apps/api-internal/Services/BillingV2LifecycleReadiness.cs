@@ -48,7 +48,7 @@ public static class BillingV2LaunchScope
     public const bool RefundsEnabled = false;
     public const bool ChargebacksEnabled = false;
     public const bool SelfServiceCancellationEnabled = false;
-    public const bool NonZeroTaxEnabled = false;
+    public const bool NonZeroTaxEnabled = true;
 
     /// <summary>
     /// Verdict applique AVANT tout depart vers un provider. Volontairement

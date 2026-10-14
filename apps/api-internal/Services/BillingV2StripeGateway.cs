@@ -210,6 +210,7 @@ public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
     private const string SubscriptionsUrl = "https://api.stripe.com/v1/subscriptions";
     private const string InvoicesUrl = "https://api.stripe.com/v1/invoices";
     private const string RefundsUrl = "https://api.stripe.com/v1/refunds";
+    private const string TaxRatesUrl = "https://api.stripe.com/v1/tax_rates";
 
     private readonly BillingV2RuntimeConfiguration _runtime;
     private readonly StripeRuntimeConfiguration _stripe;
@@ -239,6 +240,18 @@ public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
         {
             return await DisabledBillingV2StripeGateway.Instance
                 .CreateCheckoutSessionAsync(request, cancellationToken);
+        }
+
+        if (request.InclusiveTaxRateId is { Length: > 0 } taxRateId
+            && !await VerifyFrenchInclusiveTaxRateAsync(
+                taxRateId, cancellationToken))
+        {
+            return new BillingV2StripeCreateResult(
+                false,
+                "BILLING_V2_STRIPE_TAX_RATE_UNVERIFIED",
+                null, null, null, null,
+                "Le taux Stripe Test/Live ne correspond pas à la politique TVA française.",
+                Retryable: false);
         }
 
         var parameters =
@@ -317,6 +330,54 @@ public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
                 PaymentIntentId: null,
                 exception.Message,
                 Retryable: true);
+        }
+    }
+
+    private async Task<bool> VerifyFrenchInclusiveTaxRateAsync(
+        string taxRateId,
+        CancellationToken cancellationToken)
+    {
+        if (!taxRateId.StartsWith("txr_", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        using var message = new HttpRequestMessage(
+            HttpMethod.Get, $"{TaxRatesUrl}/{Uri.EscapeDataString(taxRateId)}");
+        message.Headers.Authorization = new AuthenticationHeaderValue(
+            "Bearer", _stripe.SecretKey);
+        try
+        {
+            using var response = await _httpClientFactory
+                .CreateClient(HttpClientName)
+                .SendAsync(message, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return false;
+            }
+            using var document = JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync(cancellationToken));
+            var rate = document.RootElement;
+            return ReadString(rate, "id") == taxRateId
+                && rate.TryGetProperty("percentage", out var percentage)
+                && percentage.ValueKind is JsonValueKind.Number
+                && percentage.GetDecimal() == 20m
+                && rate.TryGetProperty("inclusive", out var inclusive)
+                && inclusive.ValueKind is JsonValueKind.True
+                && rate.TryGetProperty("active", out var active)
+                && active.ValueKind is JsonValueKind.True
+                && rate.TryGetProperty("livemode", out var liveMode)
+                && liveMode.ValueKind is JsonValueKind.True or JsonValueKind.False
+                && (liveMode.ValueKind is JsonValueKind.True) == _stripe.IsLive
+                && ReadString(rate, "country") == "FR";
+        }
+        catch (Exception exception)
+            when (exception is HttpRequestException or TaskCanceledException
+                or JsonException)
+        {
+            _logger.LogWarning(exception,
+                "Stripe tax rate verification failed before checkout.");
+            return false;
         }
     }
 
@@ -444,7 +505,8 @@ public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
             ReadReference(root, "customer"),
             ReadReference(root, "latest_invoice"),
             ReadMetadata(root),
-            ReadSubscriptionItems(root));
+            ReadSubscriptionItems(root),
+            ReadTaxRateIds(root));
     }
 
     public async Task<BillingV2StripeRecurringMutationResult> UpdateRecurringAmountAsync(
@@ -452,6 +514,12 @@ public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
         CancellationToken cancellationToken)
     {
         if (!CanExecute) return BillingV2StripeRecurringMutationResult.Disabled;
+        if (DateTime.UtcNow >= BillingVatPolicy.EffectiveFromUtc)
+        {
+            return new(false,
+                "BILLING_V2_STRIPE_RECURRING_TAX_REVIEW_REQUIRED",
+                null, false);
+        }
         var subscription = await GetSubscriptionAsync(request.ProviderSubscriptionId, cancellationToken);
         var item = subscription?.Items?.Where(candidate => candidate.IsRecurring).ToArray();
         if (item is null || item.Length != 1 || string.IsNullOrWhiteSpace(item[0].ProductId))
@@ -725,7 +793,8 @@ public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
             ReadReference(root, "payment_intent"),
             ReadString(root, "billing_reason"),
             ReadMetadata(root),
-            ReadInvoicePeriodStart(root));
+            ReadInvoicePeriodStart(root),
+            ReadInvoiceTaxAmount(root));
     }
 
     private static BillingV2StripeRefundSnapshot? ParseRefund(string body)
@@ -890,7 +959,54 @@ public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
             metadata,
             // L'URL d'approbation appartient a la session relue : sans elle,
             // une reprise laissait l'abonnement sans moyen de payer.
-            ReadString(root, "url"));
+            ReadString(root, "url"),
+            root.TryGetProperty("total_details", out var details)
+                && details.ValueKind is JsonValueKind.Object
+                ? ReadLong(details, "amount_tax")
+                : null);
+    }
+
+    private static long? ReadInvoiceTaxAmount(JsonElement root)
+    {
+        if (!root.TryGetProperty("total_taxes", out var amounts)
+            && !root.TryGetProperty("total_tax_amounts", out amounts))
+        {
+            return null;
+        }
+        if (amounts.ValueKind is not JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        long total = 0;
+        foreach (var amount in amounts.EnumerateArray())
+        {
+            if (amount.ValueKind is not JsonValueKind.Object
+                || ReadLong(amount, "amount") is not { } value)
+            {
+                return null;
+            }
+            total = checked(total + value);
+        }
+        return total;
+    }
+
+    private static IReadOnlyList<string> ReadTaxRateIds(JsonElement root)
+    {
+        if (!root.TryGetProperty("default_tax_rates", out var rates)
+            || rates.ValueKind is not JsonValueKind.Array)
+        {
+            return [];
+        }
+        return rates.EnumerateArray()
+            .Select(rate => rate.ValueKind is JsonValueKind.String
+                ? rate.GetString()
+                : rate.ValueKind is JsonValueKind.Object
+                    ? ReadString(rate, "id")
+                    : null)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id!)
+            .ToArray();
     }
 
     private static string? ReadString(JsonElement root, string name)

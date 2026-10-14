@@ -13,7 +13,8 @@ public sealed record BillingV2AuthoritativeCheckoutPayload(
     string? Provider,
     string? IdempotencyKey,
     string? SuccessUrl,
-    string? CancelUrl);
+    string? CancelUrl,
+    string? AcceptedCgvVersionLabel = null);
 
 public sealed record BillingV2AuthoritativeCheckoutResponse(
     bool Created,
@@ -37,7 +38,8 @@ public sealed record BillingV2VpsAuthoritativeCheckoutPayload(
     string? Provider,
     string? IdempotencyKey,
     string? SuccessUrl,
-    string? CancelUrl);
+    string? CancelUrl,
+    string? AcceptedCgvVersionLabel = null);
 
 public sealed record BillingV2ProviderReturnPayload(
     string? Provider,

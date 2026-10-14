@@ -5153,6 +5153,10 @@ static async Task VerifyCommunicationTemplatesAsync()
             body.Contains("Zachary IT", StringComparison.Ordinal)
             && !body.Contains("Kermaria", StringComparison.Ordinal)),
         "Les e-mails envoyes aux clients doivent signer Zachary IT, jamais Kermaria.");
+    Ensure(
+        EmailTemplates.DocumentVariables("Client", "REF", null, 12000,
+            "EUR", null)["amount"] == "120,00 EUR TTC",
+        "Les e-mails de facturation doivent annoncer le total TTC.");
     var defaultEmailRuntime = EmailConfigurationResolver.Resolve(
         new ConfigurationBuilder().Build());
     Ensure(
@@ -8243,11 +8247,17 @@ static async Task VerifyFiscalPolicyAsync()
     // Le coeur de l'invariant : la resolution est faite « a la date ».
     var policy = new FiscalPolicy();
     Ensure(
-        policy.Resolve(null, DateTime.UtcNow).FiscalMention == FiscalPolicy.FranchiseBaseMention,
-        "Un document etabli aujourd'hui garde la mention en vigueur aujourd'hui.");
+        policy.Resolve(null, new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc))
+            .FiscalMention == FiscalPolicy.FranchiseBaseMention,
+        "Une operation historique conserve la mention de franchise.");
     Ensure(
-        policy.Resolve(null, future.AddDays(1)).FiscalMention == nextMention,
-        "Un document etabli apres la date d'effet doit porter la nouvelle mention.");
+        policy.Resolve(null, DateTime.UtcNow).FiscalRegime == FiscalRegimes.ReviewRequired,
+        "Un taux absent depuis octobre ne peut plus etre classe franchise par defaut.");
+    Ensure(
+        policy.Resolve(BillingVatPolicy.HistoricalFranchise, null,
+            future.AddDays(1), FiscalPolicy.FranchiseBaseMention).FiscalMention
+            == FiscalPolicy.FranchiseBaseMention,
+        "Une facture historique conserve son texte fige meme apres une revision.");
 
     Ensure(
         (await service.AddMentionAsync(
@@ -8290,8 +8300,8 @@ static async Task VerifyFiscalPolicyAsync()
         cancelled.Code == "FISCAL_MENTION_CANCELLED",
         "Une mention encore planifiee doit pouvoir etre annulee.");
     Ensure(
-        policy.Resolve(null, future.AddDays(1)).FiscalMention == FiscalPolicy.FranchiseBaseMention,
-        "Apres annulation, la mention du code redevient celle qui s'applique.");
+        policy.Resolve(null, future.AddDays(1)).FiscalRegime == FiscalRegimes.ReviewRequired,
+        "Apres annulation, une operation courante sans taux reste a qualifier.");
 
     MockFiscalPolicyRepository.Clear();
     FiscalMentionDirectory.Reset();
@@ -8729,6 +8739,22 @@ async Task RunMockBpceIssuingTestsAsync()
             addLineResponse.StatusCode == HttpStatusCode.OK,
             "L'ajout de ligne doit réussir.");
 
+        using var vatDetailRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/admin/commercial-documents/{documentId}",
+            adminSessionToken);
+        using var vatDetailResponse = await client.SendAsync(vatDetailRequest);
+        using var vatDetail = JsonDocument.Parse(
+            await vatDetailResponse.Content.ReadAsStringAsync());
+        Ensure(
+            vatDetailResponse.StatusCode == HttpStatusCode.OK
+            && vatDetail.RootElement.GetProperty("subtotalAmountCents").GetInt32() == 10000
+            && vatDetail.RootElement.GetProperty("taxAmountCents").GetInt32() == 2000
+            && vatDetail.RootElement.GetProperty("totalAmountCents").GetInt32() == 12000
+            && vatDetail.RootElement.GetProperty("lines")[0]
+                .GetProperty("taxRateBasisPoints").GetInt32() == 2000,
+            "Le document envoye au fournisseur PDF mock doit porter 100 EUR HT, 20 EUR TVA et 120 EUR TTC.");
+
         // V0.20-4 : partage du document (statut → shared_with_customer)
         using var shareRequest = CreateSessionRequest(
             HttpMethod.Post,
@@ -8823,6 +8849,26 @@ async Task RunMockBpceIssuingTestsAsync()
             && Encoding.ASCII.GetString(
                 pdfBytes, 0, Math.Min(5, pdfBytes.Length)) == "%PDF-",
             "Le contenu du PDF mock doit commencer par %PDF-.");
+
+        using var paidRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/admin/commercial-documents/{documentId}/mark-as-paid",
+            adminSessionToken);
+        paidRequest.Content = JsonContent.Create(new { });
+        using var paidResponse = await client.SendAsync(paidRequest);
+        Ensure(paidResponse.StatusCode == HttpStatusCode.OK,
+            "La confirmation de paiement BPCE mock doit réussir.");
+        using var pdfAfterPaymentRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/admin/commercial-documents/{documentId}/invoice/pdf",
+            adminSessionToken);
+        using var pdfAfterPaymentResponse = await client.SendAsync(
+            pdfAfterPaymentRequest);
+        var pdfAfterPayment = await pdfAfterPaymentResponse.Content
+            .ReadAsByteArrayAsync();
+        Ensure(pdfAfterPaymentResponse.StatusCode == HttpStatusCode.OK
+            && pdfAfterPayment.SequenceEqual(pdfBytes),
+            "Le règlement ne doit jamais effacer ni modifier le PDF fiscal déjà émis.");
 
         // V0.20-9 : sans invoice, GET /invoice doit retourner 404
         var logs = SnapshotLogs(api.Logs);
@@ -9770,7 +9816,7 @@ async Task VerifyManagedContentAsync(
         && adminDetailPayload.RootElement
             .GetProperty("bodyMarkdown")
             .GetString()
-            ?.Contains("TVA non applicable", StringComparison.Ordinal) == true,
+            ?.Contains("FR85105111520", StringComparison.Ordinal) == true,
         "Le détail admin des CGV doit rester accessible.");
 
     using var originalPackDetailRequest = CreateSessionRequest(

@@ -138,7 +138,7 @@ public static class CommunicationTemplateRegistry
             [
                 V("customerName", "Nom affiché du client."),
                 V("documentLabel", "Numéro fiscal, ou référence interne à défaut."),
-                V("amount", "Montant total formaté, devise comprise."),
+                V("amount", "Montant total TTC formaté, devise comprise."),
                 V("portalUrl", "Lien vers le document dans l'espace client."),
             ],
             TestSendSupported: false),
@@ -149,7 +149,7 @@ public static class CommunicationTemplateRegistry
             [
                 V("customerName", "Nom affiché du client."),
                 V("documentLabel", "Numéro fiscal, ou référence interne à défaut."),
-                V("amount", "Montant restant dû, formaté."),
+                V("amount", "Montant TTC restant dû, formaté."),
                 V("portalUrl", "Lien vers le document dans l'espace client."),
             ],
             TestSendSupported: false),
@@ -160,7 +160,7 @@ public static class CommunicationTemplateRegistry
             [
                 V("customerName", "Nom affiché du client."),
                 V("documentLabel", "Numéro fiscal, ou référence interne à défaut."),
-                V("amount", "Montant réglé, formaté."),
+                V("amount", "Montant TTC réglé, formaté."),
             ],
             TestSendSupported: false),
     ];

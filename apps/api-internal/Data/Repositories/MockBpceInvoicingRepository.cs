@@ -109,6 +109,23 @@ public sealed class MockBpceInvoicingRepository : IBpceInvoicingRepository
         return Task.CompletedTask;
     }
 
+    public Task MarkInvoicePaidAsync(
+        string commercialDocumentId,
+        CancellationToken cancellationToken)
+    {
+        lock (_sync)
+        {
+            if (_invoiceRecords.TryGetValue(commercialDocumentId, out var existing))
+            {
+                _invoiceRecords[commercialDocumentId] = existing with
+                {
+                    Status = "paid"
+                };
+            }
+        }
+        return Task.CompletedTask;
+    }
+
     public Task<byte[]?> GetInvoicePdfAsync(
         string commercialDocumentId,
         CancellationToken cancellationToken)

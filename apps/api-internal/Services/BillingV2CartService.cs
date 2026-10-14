@@ -61,16 +61,19 @@ public sealed class BillingV2CartService : IBillingV2CartService
     private readonly SqlRuntimeConfiguration _sql;
     private readonly IBillingV2PublicCatalogService _catalogService;
     private readonly IBillingV2PricingEngine _pricing;
+    private readonly BpceRuntimeConfiguration _bpce;
     private readonly ILogger<BillingV2CartService> _logger;
 
     public BillingV2CartService(SqlRuntimeConfiguration sql,
         IBillingV2PublicCatalogService catalogService,
         IBillingV2PricingEngine pricing,
+        BpceRuntimeConfiguration bpce,
         ILogger<BillingV2CartService> logger)
     {
         _sql = sql;
         _catalogService = catalogService;
         _pricing = pricing;
+        _bpce = bpce;
         _logger = logger;
     }
 
@@ -1142,14 +1145,34 @@ public sealed class BillingV2CartService : IBillingV2CartService
         var commitment = await ReadCommitmentAsync(connection, transaction, cart, cancellationToken);
         if (commitment.Code is null && retained.Any(line => line.BillingCadence == BillingV2BillingCadences.Monthly))
             issues.Add(new("CART_COMMITMENT_REQUIRED", "error", null, null, "Un engagement explicite est requis pour le recurrent.", true));
-        var pricing = _pricing.Calculate(new BillingV2PricingRequest(
-            retained.Select(line => new BillingV2PricingItem(line.CartItemId, line.ServiceCode,
+        var pricingItems = retained.Select(line => new BillingV2PricingItem(line.CartItemId, line.ServiceCode,
                 line.TierCode, line.PriceCode, line.UnitAmountCents, line.Quantity,
-                line.BillingCadence, line.DiscountEligible)).ToArray(), commitment.DiscountBasisPoints,
+                line.BillingCadence, line.DiscountEligible)).ToArray();
+        var pricing = _pricing.Calculate(new BillingV2PricingRequest(
+            pricingItems, commitment.DiscountBasisPoints,
             cart.PaymentMode ?? BillingV2PaymentModes.Monthly, commitment.Months, null, null, DateTime.UtcNow));
+        var now = DateTime.UtcNow;
+        var vatDecision = BillingVatPolicy.Resolve("FR", now, now.AddDays(1));
+        if (vatDecision.RateBasisPoints.HasValue
+            && _bpce.Mode is BpceIntegrationMode.Live
+            && !_bpce.SellerInvoiceIdentityConfirmed)
+        {
+            issues.Add(new BillingV2CartIssue(
+                "CART_BPCE_SELLER_IDENTITY_UNVERIFIED", "error", null, null,
+                "Le numéro de TVA sur la facture BPCE doit être vérifié.", true,
+                "La facturation TVA est en cours de vérification ; le paiement reste indisponible."));
+        }
         var allBlocking = issues.Concat(dependencyIssues).Concat(readiness.Issues)
             .Concat(scopeReadiness.Issues).Any(issue => issue.Blocking);
-        var now = DateTime.UtcNow;
+        var fiscalTotals = BillingVatPolicy.ProjectInitialChargeTotals(
+            pricingItems, pricing,
+            cart.PaymentMode ?? BillingV2PaymentModes.Monthly,
+            commitment.Months,
+            commitment.DiscountBasisPoints,
+            cart.Currency,
+            vatDecision);
+        var cgvVersionId = await ReadCurrentCgvVersionIdAsync(
+            connection, transaction, cancellationToken);
         return new(cart.Id, cart.Version, await NextQuoteVersionAsync(connection, transaction, cart.Id, cancellationToken),
             BillingV2CartPolicy.CompositionFingerprint(cart, retained), cart.Currency,
             pricing.RecurringSubtotalCents, pricing.RecurringDiscountCents,
@@ -1166,7 +1189,49 @@ public sealed class BillingV2CartService : IBillingV2CartService
                 ? (readiness.Configuration == BillingV2CartConfigurationReadiness.Deferred
                     ? BillingV2CartProvisioningReadiness.Deferred
                     : BillingV2CartProvisioningReadiness.Ready)
-                : BillingV2CartProvisioningReadiness.Blocked);
+                : BillingV2CartProvisioningReadiness.Blocked,
+            fiscalTotals.NetAmountCents,
+            fiscalTotals.TaxAmountCents,
+            vatDecision.RateBasisPoints,
+            vatDecision.Treatment,
+            BillingVatPolicy.PolicyVersion,
+            cgvVersionId);
+    }
+
+    private static async Task<string?> ReadCurrentCgvVersionIdAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using (var schemaCommand = connection.CreateCommand())
+        {
+            schemaCommand.Transaction = transaction;
+            schemaCommand.CommandText =
+                """
+                SELECT COUNT(*) FROM information_schema.tables
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'managed_content_legal_versions';
+                """;
+            if (Convert.ToInt32(await schemaCommand.ExecuteScalarAsync(
+                    cancellationToken)) != 1)
+            {
+                return null;
+            }
+        }
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT version.id
+            FROM managed_content_entries current_content
+            INNER JOIN managed_content_legal_versions version
+                ON version.content_key = current_content.content_key
+               AND version.content_sha256 = SHA2(current_content.body_markdown, 256)
+            WHERE current_content.content_key = 'legal:cgv'
+            LIMIT 1;
+            """;
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is null or DBNull ? null : result.ToString();
     }
 
     private static BillingV2CartIssue Issue(string code, BillingV2CartItem item, bool blocking)

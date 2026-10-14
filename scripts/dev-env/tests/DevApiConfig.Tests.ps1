@@ -46,6 +46,7 @@ Describe 'Configuration API DEV fail-closed' {
         @{ Name = 'production database'; Key = 'SQL_DATABASE'; Value = 'kermaria'; Expected = 'SQL_DATABASE' },
         @{ Name = 'live Stripe'; Key = 'STRIPE_MODE'; Value = 'live'; Expected = 'STRIPE_MODE' },
         @{ Name = 'live Stripe secret family'; Key = 'STRIPE_SECRET_KEY'; Value = 'sk_live_not_a_real_value'; Expected = 'STRIPE_SECRET_KEY' },
+        @{ Name = 'invalid VAT Tax Rate ID'; Key = 'STRIPE_FR_VAT20_INCLUSIVE_TAX_RATE_ID'; Value = 'price_live_wrong'; Expected = 'STRIPE_FR_VAT20_INCLUSIVE_TAX_RATE_ID' },
         @{ Name = 'production KoXo receiver'; Key = 'KOXO_SYNC_WEBHOOK_URL'; Value = 'http://192.168.100.221:8042/internal/koxo/sync/'; Expected = 'KOXO_SYNC_WEBHOOK_URL' },
         @{ Name = 'production KoXo identifier prefix'; Key = 'KOXO_IDENTIFIER_PREFIX'; Value = 'CLI-'; Expected = 'KOXO_IDENTIFIER_PREFIX' },
         @{ Name = 'non DEV customer reference prefix'; Key = 'CUSTOMER_REFERENCE_PREFIX'; Value = 'CLI-'; Expected = 'CUSTOMER_REFERENCE_PREFIX' },

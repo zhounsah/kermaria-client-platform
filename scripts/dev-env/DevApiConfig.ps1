@@ -20,6 +20,8 @@ $script:DevApiSecretKeys = @(
     'STRIPE_SECRET_KEY',
     'STRIPE_PUBLISHABLE_KEY',
     'STRIPE_WEBHOOK_SECRET',
+    # Identifiant de taux TEST non secret, gere avec les memes gardes DEV.
+    'STRIPE_FR_VAT20_INCLUSIVE_TAX_RATE_ID',
     'AD_SERVICE_ACCOUNT_USERNAME',
     'AD_SERVICE_ACCOUNT_PASSWORD',
     'SMTP_USERNAME',
@@ -136,6 +138,7 @@ function Test-DevApiConfiguration {
     $stripeMode = Get-DevApiConfigValue -Configuration $Configuration -Name 'STRIPE_MODE'
     $stripeSecretKey = Get-DevApiConfigValue -Configuration $Configuration -Name 'STRIPE_SECRET_KEY'
     $stripePublishableKey = Get-DevApiConfigValue -Configuration $Configuration -Name 'STRIPE_PUBLISHABLE_KEY'
+    $stripeVatRateId = Get-DevApiConfigValue -Configuration $Configuration -Name 'STRIPE_FR_VAT20_INCLUSIVE_TAX_RATE_ID'
     $identifierPrefix = Get-DevApiConfigValue -Configuration $Configuration -Name 'KOXO_IDENTIFIER_PREFIX'
     $referencePrefix = Get-DevApiConfigValue -Configuration $Configuration -Name 'CUSTOMER_REFERENCE_PREFIX'
     $primaryGroup = Get-DevApiConfigValue -Configuration $Configuration -Name 'KOXO_PRIMARY_GROUP_CLIENTS'
@@ -159,6 +162,9 @@ function Test-DevApiConfiguration {
     }
     if ($stripePublishableKey -match '^(?i)pk_live_') {
         $violations.Add('STRIPE_PUBLISHABLE_KEY ne peut pas appartenir a Stripe live.')
+    }
+    if ($stripeVatRateId -and $stripeVatRateId -notmatch '^txr_[A-Za-z0-9]+$') {
+        $violations.Add('STRIPE_FR_VAT20_INCLUSIVE_TAX_RATE_ID doit designer un taux Stripe valide.')
     }
     if (-not [string]::Equals($identifierPrefix, 'CLI-D', [System.StringComparison]::Ordinal)) {
         $violations.Add('KOXO_IDENTIFIER_PREFIX doit valoir CLI-D.')

@@ -914,6 +914,11 @@ export function parseCommercialDocumentLinePayload(
       || candidate.taxRateBasisPoints === null
       || candidate.taxRateBasisPoints === undefined
     )
+    || !(
+      typeof candidate.taxTreatment === "string"
+      || candidate.taxTreatment === null
+      || candidate.taxTreatment === undefined
+    )
     || typeof candidate.sortOrder !== "number"
   ) {
     return null;
@@ -930,6 +935,9 @@ export function parseCommercialDocumentLinePayload(
       typeof candidate.taxRateBasisPoints === "number"
         ? Math.trunc(candidate.taxRateBasisPoints)
         : null,
+    taxTreatment: typeof candidate.taxTreatment === "string"
+      ? candidate.taxTreatment.trim()
+      : null,
     sortOrder: Math.trunc(candidate.sortOrder),
   };
 
@@ -948,6 +956,10 @@ export function parseCommercialDocumentLinePayload(
       || (Number.isInteger(payload.taxRateBasisPoints)
         && payload.taxRateBasisPoints >= 0
         && payload.taxRateBasisPoints <= 10000))
+    && (payload.taxRateBasisPoints !== null
+      ? payload.taxRateBasisPoints === 2000
+        && (!payload.taxTreatment || payload.taxTreatment === "fr_standard")
+      : ["reverse_charge", "exempt", "outside_scope"].includes(payload.taxTreatment ?? ""))
     && Number.isInteger(payload.sortOrder)
     && payload.sortOrder >= 0
     && payload.sortOrder <= 100000

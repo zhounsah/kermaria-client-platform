@@ -161,7 +161,8 @@ public sealed record BillingV2RenewalChargeRequest(
     string Currency,
     long? MinimumCommitmentAmountCents,
     IReadOnlyList<BillingV2RenewalContractItem> Items,
-    BillingV2ContractPeriod Period);
+    BillingV2ContractPeriod Period,
+    BillingVatDecision VatDecision);
 
 public sealed record BillingV2RenewalChargeResult(
     BillingV2BillingEventDraft Draft,
@@ -192,6 +193,11 @@ public static class BillingV2RenewalChargeFactory
     public static BillingV2RenewalChargeResult Build(
         BillingV2RenewalChargeRequest request)
     {
+        if (!request.VatDecision.AutomaticChargeAllowed)
+        {
+            throw new InvalidOperationException(request.VatDecision.ReasonCode);
+        }
+
         if (request.CycleSequence <= BillingV2RenewalPolicy.InitialCycleSequence)
         {
             throw new InvalidOperationException(
@@ -252,12 +258,15 @@ public static class BillingV2RenewalChargeFactory
         long gross = 0;
         long discount = 0;
         long net = 0;
+        long tax = 0;
+        long total = 0;
         for (var index = 0; index < recurring.Length; index++)
         {
             var item = recurring[index];
             var lineGross = grossAmounts[index];
             var allocated = allocation[index];
-            var lineNet = checked(lineGross - allocated);
+            var lineTotal = checked(lineGross - allocated);
+            var fiscal = BillingVatPolicy.Split(lineTotal, request.VatDecision);
             var label = item.TierCode is null
                 ? item.ServiceCode
                 : $"{item.ServiceCode} {item.TierCode}";
@@ -270,11 +279,12 @@ public static class BillingV2RenewalChargeFactory
                 item.UnitAmountCents,
                 lineGross,
                 allocated,
-                lineNet,
-                // Franchise en base de TVA : aucune taxe sur le rail V2.
-                TaxAmountCents: 0,
-                lineNet,
-                request.Currency));
+                fiscal.NetAmountCents,
+                fiscal.TaxAmountCents,
+                fiscal.TotalAmountCents,
+                request.Currency,
+                request.VatDecision.RateBasisPoints,
+                request.VatDecision.Treatment));
             sources.Add(new BillingV2BillingEventLineSource(
                 item.ServiceId,
                 item.TierId,
@@ -285,15 +295,18 @@ public static class BillingV2RenewalChargeFactory
 
             gross = checked(gross + lineGross);
             discount = checked(discount + allocated);
-            net = checked(net + lineNet);
+            net = checked(net + fiscal.NetAmountCents);
+            tax = checked(tax + fiscal.TaxAmountCents);
+            total = checked(total + fiscal.TotalAmountCents);
         }
 
         // Plancher d'engagement : c'est une regle de RENOUVELLEMENT, donc c'est
         // bien ici qu'elle s'applique - et nulle part sur la charge initiale.
         var floor = request.MinimumCommitmentAmountCents;
-        if (floor.HasValue && floor.Value > net)
+        if (floor.HasValue && floor.Value > total)
         {
-            var complement = checked(floor.Value - net);
+            var complement = checked(floor.Value - total);
+            var fiscal = BillingVatPolicy.Split(complement, request.VatDecision);
             lines.Add(new BillingV2BillingEventLineDraft(
                 lines.Count,
                 CommitmentFloorServiceCode,
@@ -303,10 +316,12 @@ public static class BillingV2RenewalChargeFactory
                 complement,
                 complement,
                 0,
-                complement,
-                TaxAmountCents: 0,
-                complement,
-                request.Currency));
+                fiscal.NetAmountCents,
+                fiscal.TaxAmountCents,
+                fiscal.TotalAmountCents,
+                request.Currency,
+                request.VatDecision.RateBasisPoints,
+                request.VatDecision.Treatment));
             sources.Add(new BillingV2BillingEventLineSource(
                 recurring[0].ServiceId,
                 recurring[0].TierId,
@@ -315,8 +330,26 @@ public static class BillingV2RenewalChargeFactory
                 recurring[0].SubscriptionItemId,
                 recurring[0].SubscriptionItemPriceComponentId));
             gross = checked(gross + complement);
-            net = checked(net + complement);
+            net = checked(net + fiscal.NetAmountCents);
+            tax = checked(tax + fiscal.TaxAmountCents);
+            total = checked(total + fiscal.TotalAmountCents);
         }
+
+        var groupedTaxes = BillingVatPolicy.AllocateGroupedInclusiveTax(
+            lines.Select(line => line.TotalAmountCents).ToArray(),
+            Enumerable.Repeat(true, lines.Count).ToArray(),
+            request.VatDecision);
+        for (var index = 0; index < lines.Count; index++)
+        {
+            var line = lines[index];
+            lines[index] = line with
+            {
+                NetAmountCents = line.TotalAmountCents - groupedTaxes[index],
+                TaxAmountCents = groupedTaxes[index]
+            };
+        }
+        net = lines.Sum(line => line.NetAmountCents);
+        tax = lines.Sum(line => line.TaxAmountCents);
 
         var draft = new BillingV2BillingEventDraft(
             BillingV2BillingEventTypes.RenewalCharge,
@@ -325,8 +358,8 @@ public static class BillingV2RenewalChargeFactory
             gross,
             discount,
             net,
-            TaxAmountCents: 0,
-            net,
+            tax,
+            total,
             PricingEngineVersion,
             BillingV2RenewalPolicy.Canonical(
                 request.SubscriptionId,
@@ -435,7 +468,8 @@ public sealed record BillingV2StripeSubscriptionSnapshot(
     string? CustomerId,
     string? LatestInvoiceId,
     IReadOnlyDictionary<string, string> Metadata,
-    IReadOnlyList<BillingV2StripeSubscriptionItemSnapshot>? Items = null);
+    IReadOnlyList<BillingV2StripeSubscriptionItemSnapshot>? Items = null,
+    IReadOnlyList<string>? DefaultTaxRateIds = null);
 
 public sealed record BillingV2StripeSubscriptionItemSnapshot(
     string ItemId,
@@ -460,7 +494,8 @@ public sealed record BillingV2StripeInvoiceSnapshot(
     /// Debut de la periode facturee par Stripe. Sert UNIQUEMENT a savoir de
     /// quel cycle on parle ; le montant, lui, vient toujours du contrat local.
     /// </summary>
-    DateTime? PeriodStartUtc = null);
+    DateTime? PeriodStartUtc = null,
+    long? TotalTaxAmountCents = null);
 
 public sealed record BillingV2RenewalCycleResolution(
     bool Resolved,
@@ -513,7 +548,8 @@ public sealed record BillingV2StripeLifecycleExpectation(
     string ExpectedCurrency,
     long ExpectedAmountCents,
     string? ExpectedProviderSubscriptionId,
-    string? ExpectedProviderCustomerId);
+    string? ExpectedProviderCustomerId,
+    long? ExpectedTaxAmountCents = null);
 
 public sealed record BillingV2StripeLifecycleVerification(
     bool Settled,
@@ -699,6 +735,13 @@ public static class BillingV2StripeLifecycleVerifier
                 invoice.AmountPaidCents,
                 invoice.Currency.Trim().ToUpperInvariant(),
                 settlement.Diagnostic);
+        }
+
+        if (expectation.ExpectedTaxAmountCents.HasValue
+            && invoice.TotalTaxAmountCents != expectation.ExpectedTaxAmountCents)
+        {
+            return Mismatch("BILLING_V2_RENEWAL_INVOICE_TAX_MISMATCH",
+                invoice.TotalTaxAmountCents?.ToString());
         }
 
         return new BillingV2StripeLifecycleVerification(

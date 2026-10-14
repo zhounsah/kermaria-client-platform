@@ -370,9 +370,9 @@ function createMockManagedContentDetail(
     case "legal:cgv":
       return {
         ...entry,
-        versionLabel: "Version du : 03 août 2026",
+        versionLabel: "Version du : 14 octobre 2026",
         bodyMarkdown: [
-          "Les présentes Conditions Générales de Vente s'appliquent aux prestations proposées par Zachary IT.",
+          "Les présentes Conditions Générales de Vente s'appliquent aux prestations proposées par Zachary HOUNSA-HOUNKPA EI, nom commercial Zachary IT, numéro de TVA FR85105111520.",
           "",
           "## Objet",
           "",
@@ -392,7 +392,7 @@ function createMockManagedContentDetail(
           "",
           "## Facturation et paiement",
           "",
-          "Les prix sont exprimés en euros. La mention de franchise en base de TVA s'applique lorsque le régime concerné est en vigueur.",
+          "Depuis le 1er octobre 2026, Zachary IT relève du régime réel normal de TVA. Les prix destinés aux consommateurs sont présentés TTC ; une opération française taxable au taux normal distingue son montant HT, sa TVA à 20 % et son total TTC.",
           "",
           "## Données et responsabilité",
           "",
@@ -434,9 +434,9 @@ function createMockManagedContentDetail(
     case "legal:mentions-legales":
       return {
         ...entry,
-        versionLabel: "Dernière mise à jour : 07 juillet 2026",
+        versionLabel: "Dernière mise à jour : 14 octobre 2026",
         bodyMarkdown: [
-          "Le présent site est édité par Zachary HOUNSA-HOUNKPA EI, nom commercial Zachary IT.",
+          "Le présent site est édité par Zachary HOUNSA-HOUNKPA EI, nom commercial Zachary IT, numéro de TVA FR85105111520. Le régime réel normal de TVA s'applique depuis le 1er octobre 2026 ; le régime micro-BNC demeure applicable.",
           "",
           "## Éditeur du site",
           "",

@@ -194,7 +194,7 @@ function DirectOrderingPricing({ diagnostic }: { diagnostic: BillingV2AdminDirec
 
 function presentInitialPrices(prices: BillingV2AdminDirectOrderingDiagnostic["flatInitialPrices"]) {
   if (prices.length === 0) return "Aucun dans la devise du catalogue";
-  return prices.map((price) => `${formatMoney(price.amountCents, price.currency)}${price.billingCadence === "monthly" ? " / mois" : " · frais initiaux"}`).join(" ; ");
+  return prices.map((price) => `${formatMoney(price.amountCents, price.currency)} TTC${price.billingCadence === "monthly" ? " / mois" : " · frais initiaux"}`).join(" ; ");
 }
 
 function configurationPolicyLabel(value: string) {

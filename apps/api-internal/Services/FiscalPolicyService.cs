@@ -47,12 +47,12 @@ public sealed class FiscalPolicyService : IFiscalPolicyService
     [
         new(
             FiscalRegimes.FranchiseBase,
-            "Franchise en base de TVA",
-            "Regime applique tant qu'aucune TVA n'est facturee. La mention legale accompagne chaque ligne sans taxe."),
+            "Franchise en base de TVA (historique)",
+            "Regime historique avant le 1er octobre 2026. Une ligne courante sans taux exige une qualification explicite ; elle ne releve pas automatiquement de la franchise."),
         new(
             FiscalRegimes.Standard,
             "TVA applicable",
-            "Regime applique des qu'une ligne porte un taux de TVA. Le taux lui-meme vient du document, jamais de ce texte.")
+            "Regime reel normal de TVA depuis le 1er octobre 2026 pour les operations taxables en France. Le taux et la qualification viennent du document, jamais de ce texte.")
     ];
 
     private readonly IFiscalPolicyRepository _repository;

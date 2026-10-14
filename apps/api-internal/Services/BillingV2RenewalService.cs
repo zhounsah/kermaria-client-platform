@@ -15,7 +15,9 @@ public sealed record BillingV2RenewalContractSnapshot(
     int DiscountBasisPoints,
     long? MinimumCommitmentAmountCents,
     DateTime BillingAnchorUtc,
-    IReadOnlyList<BillingV2RenewalContractItem> Items);
+    IReadOnlyList<BillingV2RenewalContractItem> Items,
+    string? CustomerCountry,
+    DateTime CreatedAtUtc);
 
 public sealed record BillingV2RenewalEnsureResult(
     bool Created,
@@ -103,19 +105,22 @@ public sealed class BillingV2RenewalService : IBillingV2RenewalService
     private readonly IBillingV2StripeGateway _gateway;
     private readonly IBillingV2StripeRailService _rail;
     private readonly ILogger<BillingV2RenewalService> _logger;
+    private readonly StripeRuntimeConfiguration? _stripeConfiguration;
 
     public BillingV2RenewalService(
         SqlRuntimeConfiguration sql,
         IBillingV2Clock clock,
         IBillingV2StripeGateway gateway,
         IBillingV2StripeRailService rail,
-        ILogger<BillingV2RenewalService> logger)
+        ILogger<BillingV2RenewalService> logger,
+        StripeRuntimeConfiguration? stripeConfiguration = null)
     {
         _sql = sql;
         _clock = clock;
         _gateway = gateway;
         _rail = rail;
         _logger = logger;
+        _stripeConfiguration = stripeConfiguration;
     }
 
     public async Task<BillingV2RenewalSignalResult> HandleProviderSignalAsync(
@@ -393,6 +398,52 @@ public sealed class BillingV2RenewalService : IBillingV2RenewalService
             return Refused("BILLING_V2_RENEWAL_SUBSCRIPTION_NOT_FOUND", cycleSequence);
         }
 
+        // Un contrat antérieur au changement n'est jamais modifié en silence.
+        if (BillingV2BillingCalendar.CivilDate(snapshot.CreatedAtUtc)
+                < BillingVatPolicy.EffectiveDate
+            && cyclePeriod.CivilStart >= BillingVatPolicy.EffectiveDate)
+        {
+            return Refused("BILLING_V2_RENEWAL_EXISTING_CONTRACT_TAX_REVIEW_REQUIRED",
+                cycleSequence);
+        }
+
+        var vatDecision = BillingVatPolicy.Resolve(
+            snapshot.CustomerCountry,
+            cyclePeriod.StartUtc,
+            cyclePeriod.EndUtc);
+        if (!vatDecision.AutomaticChargeAllowed)
+        {
+            return Refused(vatDecision.ReasonCode, cycleSequence);
+        }
+        if (vatDecision.RateBasisPoints.HasValue
+            && _stripeConfiguration?.HasFrenchInclusiveVatTaxRate != true)
+        {
+            return Refused("BILLING_V2_STRIPE_INCLUSIVE_TAX_RATE_REQUIRED",
+                cycleSequence);
+        }
+        if (vatDecision.RateBasisPoints.HasValue)
+        {
+            if (!await InitialFiscalSnapshotReadyAsync(
+                    connection, subscriptionId, cancellationToken))
+            {
+                return Refused("BILLING_V2_RENEWAL_INITIAL_TAX_REVIEW_REQUIRED",
+                    cycleSequence);
+            }
+            var providerSubscriptionId = await ReadProviderSubscriptionIdAsync(
+                connection, subscriptionId, cancellationToken);
+            var providerSubscription = providerSubscriptionId is null
+                ? null
+                : await _gateway.GetSubscriptionAsync(providerSubscriptionId,
+                    cancellationToken);
+            if (providerSubscription?.DefaultTaxRateIds?.Contains(
+                    _stripeConfiguration!.FrenchInclusiveVatTaxRateId!,
+                    StringComparer.Ordinal) != true)
+            {
+                return Refused("BILLING_V2_RENEWAL_PROVIDER_TAX_REVIEW_REQUIRED",
+                    cycleSequence);
+            }
+        }
+
         BillingV2RenewalChargeResult charge;
         try
         {
@@ -408,7 +459,8 @@ public sealed class BillingV2RenewalService : IBillingV2RenewalService
                     snapshot.Items,
                     // La periode vient de l'ancre contractuelle et du rang du
                     // cycle : elle est reproductible a l'identique.
-                    cyclePeriod));
+                    cyclePeriod,
+                    vatDecision));
         }
         catch (InvalidOperationException exception)
         {
@@ -521,6 +573,34 @@ public sealed class BillingV2RenewalService : IBillingV2RenewalService
             reader.GetString("currency"));
     }
 
+    private static async Task<bool> InitialFiscalSnapshotReadyAsync(
+        MySqlConnection connection,
+        string subscriptionId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT COUNT(*) AS line_count,
+                   COALESCE(SUM(CASE
+                       WHEN line.tax_treatment = 'fr_standard' THEN 1
+                       ELSE 0 END), 0) AS qualified_count
+            FROM billing_v2_billing_event_lines line
+            INNER JOIN billing_v2_billing_events event_row
+                ON event_row.id = line.billing_event_id
+            WHERE event_row.subscription_id = @subscription_id
+              AND event_row.event_type = 'initial_charge'
+              AND event_row.financial_status = 'finalized';
+            """;
+        command.Parameters.AddWithValue("@subscription_id", subscriptionId);
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            && reader.GetInt64("line_count") > 0
+            && reader.GetInt64("line_count")
+                == reader.GetInt64("qualified_count");
+    }
+
     /// <summary>
     /// Lit le CONTRAT, pas le catalogue.
     ///
@@ -544,6 +624,8 @@ public sealed class BillingV2RenewalService : IBillingV2RenewalService
                 SELECT
                     subscription.id,
                     subscription.customer_id,
+                    customer.country AS customer_country,
+                    subscription.created_at,
                     subscription.status,
                     subscription.payment_mode,
                     subscription.currency,
@@ -555,6 +637,8 @@ public sealed class BillingV2RenewalService : IBillingV2RenewalService
                         subscription.created_at) AS billing_anchor_at,
                     term.commitment_months
                 FROM billing_v2_subscriptions subscription
+                INNER JOIN customers customer
+                    ON customer.id = subscription.customer_id
                 INNER JOIN billing_v2_commitment_terms term
                     ON term.id = subscription.commitment_term_id
                 WHERE subscription.id = @subscription_id
@@ -583,7 +667,12 @@ public sealed class BillingV2RenewalService : IBillingV2RenewalService
                 DateTime.SpecifyKind(
                     reader.GetDateTime("billing_anchor_at"),
                     DateTimeKind.Utc),
-                Array.Empty<BillingV2RenewalContractItem>());
+                Array.Empty<BillingV2RenewalContractItem>(),
+                reader.IsDBNull(reader.GetOrdinal("customer_country"))
+                    ? null
+                    : reader.GetString("customer_country"),
+                DateTime.SpecifyKind(reader.GetDateTime("created_at"),
+                    DateTimeKind.Utc));
         }
 
         var items = new List<BillingV2RenewalContractItem>();

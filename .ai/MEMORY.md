@@ -253,12 +253,17 @@
 
 ### Paiements / facturation
 
+- [tva-transition-2026-10-14.md](topics/tva-transition-2026-10-14.md) : TVA réelle normale depuis le 01/10/2026, calcul TTC inclusif et archives légales sur DEV ; garde BPCE jusqu'à preuve du PDF vendeur, aucune livraison PROD.
 - [bpce-invoicing-api.md](topics/bpce-invoicing-api.md) : intégration BPCE ; aucun token ne doit vivre dans la mémoire. L'environnement de la clé y était **supposé** production et non confirmé : ne pas transformer cette hypothèse en fait.
 - [paypal-v022-gotchas.md](topics/paypal-v022-gotchas.md) et [v0.35-cart.md](topics/v0.35-cart.md) conservent les pièges historiques utiles.
 - La mémoire Codex rappelle qu'une configuration live/readiness ne prouve pas un paiement/webhook réellement exécuté.
 
 ### Sauvegardes / Veeam
 
+- [veeam-etat-2026-10-07.md](topics/veeam-etat-2026-10-07.md) : relevé live en
+  lecture seule de SRV-16, du job de configuration, du collecteur et des limites
+  de preuve. La sauvegarde de configuration est désormais activée et chiffrée ;
+  le fichier `.bco` et sa restauration restent à vérifier.
 - La mémoire Codex du 2026-08-08 documente le collecteur Veeam, le mapping business KoXoDATA et une release v1.1.14 alors partiellement déployée. **Le statut de déploiement est historique : revalider `/backups` et la release active avant toute conclusion actuelle.**
 - Ne jamais exposer au client les détails internes Veeam, chemins SMB, repositories ou erreurs techniques.
 

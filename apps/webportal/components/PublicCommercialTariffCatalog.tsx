@@ -120,10 +120,10 @@ function CommercialTariffCard({
                   {tier.description ? ` — ${tier.description}` : ""}
                   {tier.details.length > 0 ? ` (${tier.details.join(", ")})` : ""}
                 </span>
-                <span>{tier.recurringPrice ? `${formatMoney(tier.recurringPrice)} / mois` : "Sur devis"}</span>
+                <span>{tier.recurringPrice ? <>{formatMoney(tier.recurringPrice)} TTC / mois{frenchNetHint(tier.recurringPrice)}</> : "Sur devis"}</span>
                 {tier.initialFees.map((fee, index) => (
                   <span className="commercial-tariff-tier-fee" key={`${tier.id}-fee-${index}`}>
-                    + {formatMoney(fee)} de mise en service
+                    + {formatMoney(fee)} TTC de mise en service{frenchNetHint(fee)}
                   </span>
                 ))}
               </li>
@@ -176,11 +176,12 @@ function PriceSummary({
   return (
     <div className="commercial-tariff-price-block">
       <p className="commercial-tariff-price">
-        {prefix}{formatMoney(service.startingPrice)} <span>{priceUnit(service)}</span>
+        {prefix}{formatMoney(service.startingPrice)} TTC <span>{priceUnit(service)}</span>
       </p>
+      {frenchNetHint(service.startingPrice)}
       {service.initialFees.map((fee, index) => (
         <p className="commercial-tariff-fee" key={`fee-${index}`}>
-          + {formatMoney(fee)} de frais de mise en service
+          + {formatMoney(fee)} TTC de frais de mise en service{frenchNetHint(fee)}
         </p>
       ))}
       <p className="commercial-tariff-tax">{taxNotice}</p>
@@ -189,7 +190,7 @@ function PriceSummary({
 }
 
 function orderingStatusLabel(service: PublicCommercialService) {
-  if (service.orderingMode === "direct") return "Commande en ligne disponible";
+  if (service.orderingMode === "direct") return "Ajout au panier disponible";
   if (service.orderingMode === "offer_component") {
     return service.offerCount > 1
       ? "Disponible dans plusieurs offres"
@@ -219,6 +220,12 @@ function formatMoney(money: PublicCommercialMoney) {
     style: "currency",
     currency: money.currency,
   }).format(money.amountCents / 100);
+}
+
+function frenchNetHint(money: PublicCommercialMoney) {
+  return money.frenchNetAmountCents === undefined
+    ? null
+    : <small> ({formatMoney({ amountCents: money.frenchNetAmountCents, currency: money.currency })} HT, estimation France)</small>;
 }
 
 function priceUnit(service: PublicCommercialService) {

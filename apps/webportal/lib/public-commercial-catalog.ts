@@ -36,10 +36,8 @@ import { resolvePublicCommercialOrdering } from "@/lib/public-commercial-orderin
  * petit montant deja resolu parmi les paliers publies ; elle ne devient pas
  * une autorite de calcul contractuel.
  *
- * Limite fiscale connue : le catalogue public ne fournit pas aujourd'hui une
- * autorite fiscale suffisante pour choisir entre HT et TTC ou calculer une
- * TVA. `TAX_NOTICE` est donc la formulation provisoire centralisee de cette
- * projection ; elle devra etre remplacee par une donnee metier fiable.
+ * Le TTC et sa ventilation indicative française proviennent d'API-INTERNAL.
+ * Le devis final reste l'autorité après qualification du client.
  *
  * `publicOrderingMode` est l'autorité de présentation quand il est fourni par
  * Billing V2. `selfServiceOrderable` reste un drapeau technique historique :
@@ -68,7 +66,7 @@ export function buildPublicCommercialCatalog(
   };
 }
 
-const TAX_NOTICE = "Montants affichés hors taxes applicables.";
+const TAX_NOTICE = "Prix TTC pour une opération française taxable. Le montant HT indicatif figure sous le prix ; le devis final dépend de la qualification fiscale du client.";
 
 const CATEGORY_PRESENTATION: Readonly<Record<string, string>> = {
   "Accès": "Postes et accès à distance",
@@ -264,13 +262,14 @@ function projectService(
   displayOrder: number,
 ): PublicCommercialService {
   const tierProjections = service.tiers.map((tier) => projectTier(service.code, tier, catalog.currency));
-  const recurringAmounts = [
-    service.flatMonthlyAmountCents,
-    ...tierProjections.map((tier) => tier.recurringPrice?.amountCents ?? null),
-  ].filter((amount): amount is number => amount !== null && amount > 0);
-  const startingPrice = recurringAmounts.length > 0
-    ? money(Math.min(...recurringAmounts), catalog.currency)
-    : null;
+  const recurringPrices = [
+    service.flatMonthlyAmountCents && service.flatMonthlyAmountCents > 0
+      ? money(service.flatMonthlyAmountCents, catalog.currency,
+          service.flatMonthlyFrenchNetAmountCents)
+      : null,
+    ...tierProjections.map((tier) => tier.recurringPrice),
+  ].filter((amount): amount is PublicCommercialMoney => amount !== null);
+  const startingPrice = recurringPrices.sort((a, b) => a.amountCents - b.amountCents)[0] ?? null;
   const publicUrl = storefrontServiceUrlForBillingCode(service.code);
   const preferredOfferAction = resolvePreferredOfferAction(service.code, catalog);
   const offerCount = countPublicOffersForService(service.code, catalog);
@@ -340,7 +339,8 @@ function projectTier(
   fallbackCurrency: string,
 ): PublicCommercialTier {
   const recurringPrice = tier.monthlyAmountCents > 0
-    ? money(tier.monthlyAmountCents, currencyOf(tier.priceComponents, fallbackCurrency))
+    ? money(tier.monthlyAmountCents, currencyOf(tier.priceComponents, fallbackCurrency),
+        tier.monthlyFrenchNetAmountCents)
     : null;
   return {
     id: tier.code,
@@ -400,7 +400,8 @@ function initialFeesOf(
   return components
     .filter((component) => component.billingCadence === "one_time"
       && component.chargeTrigger === "initial_subscription")
-    .map((component) => money(component.amountCents, component.currency));
+    .map((component) => money(component.amountCents, component.currency,
+      component.frenchNetAmountCents));
 }
 
 function currencyOf(
@@ -410,8 +411,9 @@ function currencyOf(
   return components?.find((component) => component.billingCadence === "monthly")?.currency ?? fallbackCurrency;
 }
 
-function money(amountCents: number, currency: string): PublicCommercialMoney {
-  return { amountCents, currency };
+function money(amountCents: number, currency: string,
+  frenchNetAmountCents?: number): PublicCommercialMoney {
+  return { amountCents, currency, frenchNetAmountCents };
 }
 
 function presentCategory(category: string): string {

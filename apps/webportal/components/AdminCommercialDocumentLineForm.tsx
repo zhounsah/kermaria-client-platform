@@ -46,8 +46,11 @@ export function AdminCommercialDocumentLineForm({
   );
   const [taxRateBasisPoints, setTaxRateBasisPoints] = useState(
     line?.taxRateBasisPoints === null || line?.taxRateBasisPoints === undefined
-      ? ""
+      ? "2000"
       : String(line.taxRateBasisPoints),
+  );
+  const [taxTreatment, setTaxTreatment] = useState(
+    line?.taxTreatment ?? (line ? "review_required" : "fr_standard"),
   );
   const [sortOrder, setSortOrder] = useState(String(line?.sortOrder ?? 0));
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -65,7 +68,7 @@ export function AdminCommercialDocumentLineForm({
     const parsedQuantity = Number.parseFloat(quantity);
     const parsedPrice = Number.parseInt(unitPriceCents, 10);
     const parsedSort = Number.parseInt(sortOrder, 10);
-    const parsedTax = taxRateBasisPoints.trim()
+    const parsedTax = taxTreatment === "fr_standard" && taxRateBasisPoints.trim()
       ? Number.parseInt(taxRateBasisPoints, 10)
       : null;
     const payload = {
@@ -75,6 +78,7 @@ export function AdminCommercialDocumentLineForm({
       unitLabel: unitLabel.trim(),
       unitPriceCents: parsedPrice,
       taxRateBasisPoints: parsedTax,
+      taxTreatment,
       sortOrder: parsedSort,
     };
 
@@ -90,6 +94,14 @@ export function AdminCommercialDocumentLineForm({
       setMessage({
         tone: "error",
         text: "La ligne doit contenir une quantité, un prix et un libellé valides.",
+      });
+      return;
+    }
+    if (taxTreatment === "review_required"
+      || (taxTreatment === "fr_standard" && parsedTax !== 2000)) {
+      setMessage({
+        tone: "error",
+        text: "Choisissez un traitement fiscal. Le taux normal français est de 20 %.",
       });
       return;
     }
@@ -206,6 +218,19 @@ export function AdminCommercialDocumentLineForm({
       </div>
       <div className="form-grid">
         <label>
+          Traitement fiscal
+          <select disabled={disabled} onChange={(event) => setTaxTreatment(event.target.value)} value={taxTreatment}>
+            <option value="review_required">À qualifier avant émission</option>
+            <option value="fr_standard">France — TVA normale 20 %</option>
+            <option value="reverse_charge">Autoliquidation</option>
+            <option value="exempt">Exonération justifiée</option>
+            <option value="outside_scope">Hors champ TVA française</option>
+          </select>
+          {taxTreatment !== "fr_standard" && taxTreatment !== "review_required"
+            ? <small>Une revue des justificatifs est nécessaire avant l&apos;émission BPCE.</small>
+            : null}
+        </label>
+        <label>
           Prix unitaire HT (centimes)
           <input
             disabled={disabled}
@@ -217,7 +242,7 @@ export function AdminCommercialDocumentLineForm({
         <label>
           TVA (basis points)
           <input
-            disabled={disabled}
+            disabled={disabled || taxTreatment !== "fr_standard"}
             inputMode="numeric"
             onChange={(event) => setTaxRateBasisPoints(event.target.value)}
             value={taxRateBasisPoints}

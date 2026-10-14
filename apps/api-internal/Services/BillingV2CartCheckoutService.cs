@@ -36,7 +36,8 @@ public sealed record BillingV2CartCheckoutCommand(
     string CartId,
     int ExpectedCartVersion,
     int AcceptedQuoteVersion,
-    string AcceptedCompositionFingerprint);
+    string AcceptedCompositionFingerprint,
+    string AcceptedCgvVersionId);
 
 public sealed record BillingV2CartCheckoutResult(
     string Code,
@@ -183,6 +184,9 @@ public sealed class BillingV2CartCheckoutService : IBillingV2CartCheckoutService
 
         var quote = await ReadAcceptedQuoteAsync(connection, command, cancellationToken);
         if (quote is null) return new("CART_QUOTE_CHANGED", CartStatus: cart.Status, CartVersion: cart.Version);
+        if (!string.Equals(quote.CgvVersionId, command.AcceptedCgvVersionId,
+                StringComparison.Ordinal))
+            return new("CART_CGV_VERSION_CHANGED", CartStatus: cart.Status, CartVersion: cart.Version);
         if (quote.ExpiresAtUtc <= DateTime.UtcNow) return new("CART_QUOTE_EXPIRED", CartStatus: cart.Status, CartVersion: cart.Version);
         if (!string.Equals(quote.CommercialReadiness, BillingV2CartCommercialReadiness.Ready, StringComparison.Ordinal)
             || HasBlockingIssue(quote))
@@ -221,7 +225,8 @@ public sealed class BillingV2CartCheckoutService : IBillingV2CartCheckoutService
                     CancelUrl: cancelUrl,
                     CompositionOverride: composition,
                     CartCheckoutLink: new BillingV2CartCheckoutLink(
-                        cart.Id, cart.Version, quote.RecurringTotalCents, quote.TotalDueNowCents)),
+                        cart.Id, cart.Version, quote.RecurringTotalCents,
+                        quote.TotalDueNowCents, quote.CgvVersionId!)),
                 correlationId,
                 cancellationToken);
             _logger.LogInformation(
@@ -293,7 +298,8 @@ public sealed class BillingV2CartCheckoutService : IBillingV2CartCheckoutService
             && command.ExpectedCartVersion >= 0
             && command.AcceptedQuoteVersion > 0
             && command.AcceptedCompositionFingerprint is { Length: 64 }
-            && command.AcceptedCompositionFingerprint.All(Uri.IsHexDigit);
+            && command.AcceptedCompositionFingerprint.All(Uri.IsHexDigit)
+            && Guid.TryParse(command.AcceptedCgvVersionId, out _);
 
     private static bool HasBlockingIssue(BillingV2CartQuote quote)
         => quote.DependencyIssues.Concat(quote.ScopeIssues).Concat(quote.ConfigurationIssues)
@@ -492,6 +498,8 @@ public sealed class BillingV2CartCheckoutService : IBillingV2CartCheckoutService
             || quote.CartVersion != cart.Version
             || !string.Equals(quote.Currency, cart.Currency, StringComparison.Ordinal)
             || !string.Equals(quote.QuoteStatus, BillingV2CartQuoteStatuses.Current, StringComparison.Ordinal)
+            || !string.Equals(quote.TaxPolicyVersion, BillingVatPolicy.PolicyVersion, StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(quote.CgvVersionId)
             || string.IsNullOrWhiteSpace(cart.PaymentMode)
             || string.IsNullOrWhiteSpace(cart.CommitmentTermId)) return null;
 

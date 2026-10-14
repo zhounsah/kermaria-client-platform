@@ -239,7 +239,8 @@ public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
             cancelUrl,
             // Rattachement a un client Stripe deja connu, s'il y en a un.
             // Sans lui, rien ne change : `customer_email` reste utilise.
-            attempt.ProviderCustomerReference);
+            attempt.ProviderCustomerReference,
+            _stripe.FrenchInclusiveVatTaxRateId);
         var created = await _gateway.CreateCheckoutSessionAsync(
             stripeRequest,
             cancellationToken);
@@ -426,7 +427,8 @@ public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
                 attempt.ExpectedCurrency,
                 attempt.ExpectedAmountCents,
                 expectedMode,
-                ExpectedCustomerEmail: null));
+                ExpectedCustomerEmail: null,
+                ExpectedTaxAmountCents: billingEvent.TaxAmountCents));
 
         // Phase 3, point 2. `payment_status=paid` sur la session ne suffit plus
         // en mode subscription : on relit l'abonnement ET l'invoice. Une session
@@ -719,7 +721,8 @@ public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
                 attempt.ExpectedCurrency,
                 attempt.ExpectedAmountCents,
                 locator.ProviderSubscriptionId,
-                ExpectedProviderCustomerId: null));
+                ExpectedProviderCustomerId: null,
+                ExpectedTaxAmountCents: billingEvent.TaxAmountCents));
 
         await BillingV2FinancialCoreStore.LinkAttemptProviderObjectsAsync(
             connection,
@@ -986,7 +989,8 @@ public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
                     attempt.ExpectedCurrency,
                     attempt.ExpectedAmountCents,
                     providerSubscriptionId,
-                    ExpectedProviderCustomerId: null));
+                    ExpectedProviderCustomerId: null,
+                    ExpectedTaxAmountCents: billingEvent.TaxAmountCents));
     }
 
     private sealed record ProviderLocator(

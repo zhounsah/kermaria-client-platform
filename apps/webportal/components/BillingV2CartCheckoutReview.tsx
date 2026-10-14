@@ -161,7 +161,7 @@ export function BillingV2CartCheckoutReview({ initialLayout }: { initialLayout: 
   }, [checkoutStatus, loadRecovery]);
 
   const startCheckout = useCallback(async () => {
-    if (!cart || !quote || !accepted || pending || emailVerificationRequired) return;
+    if (!cart || !quote || !quote.cgvVersionId || !accepted || pending || emailVerificationRequired) return;
     setPending(true);
     setMessage(null);
     // The Cart id is already known before the mutation. Persist it in the
@@ -173,6 +173,7 @@ export function BillingV2CartCheckoutReview({ initialLayout }: { initialLayout: 
       expectedCartVersion: quote.cartVersion,
       acceptedQuoteVersion: quote.quoteVersion,
       acceptedCompositionFingerprint: quote.compositionFingerprint,
+      acceptedCgvVersionId: quote.cgvVersionId ?? "",
     });
     setPending(false);
     if (!result.ok) {
@@ -186,8 +187,8 @@ export function BillingV2CartCheckoutReview({ initialLayout }: { initialLayout: 
         setMessage("Vérifiez votre adresse e-mail pour continuer vers le paiement. Nous avons envoyé un lien de vérification à votre adresse e-mail.");
         return;
       }
-      if (result.error.code === "CART_QUOTE_CHANGED" || result.error.code === "CART_QUOTE_EXPIRED") {
-        setMessage("Le prix de votre panier a été mis à jour. Vérifiez le nouveau montant avant de poursuivre.");
+      if (result.error.code === "CART_QUOTE_CHANGED" || result.error.code === "CART_QUOTE_EXPIRED" || result.error.code === "CART_CGV_VERSION_CHANGED") {
+        setMessage("Le prix ou les CGV ont été mis à jour. Vérifiez-les avant de poursuivre.");
         setAccepted(false);
         await load();
         return;
@@ -282,6 +283,9 @@ export function BillingV2CartCheckoutReview({ initialLayout }: { initialLayout: 
           recurringSubtotalCents={quote.recurringSubtotalCents}
           recurringTotalCents={quote.recurringTotalCents}
           totalDueNowCents={quote.totalDueNowCents}
+          subtotalBeforeTaxCents={quote.subtotalBeforeTaxCents}
+          taxAmountCents={quote.taxAmountCents}
+          taxRateBasisPoints={quote.taxRateBasisPoints}
         />
         {state === "anonymous" ? (
           <section className="subscription-review-account-step" aria-labelledby="subscription-account-step-title">
@@ -305,12 +309,13 @@ export function BillingV2CartCheckoutReview({ initialLayout }: { initialLayout: 
             <label className="subscription-review-confirmation">
               <input checked={accepted} onChange={(event) => setAccepted(event.target.checked)} type="checkbox" />
               <span>
-                <strong>Je confirme la composition et le prix affichés.</strong>
+                <strong>Je confirme la composition et le prix TTC affichés et j’accepte les <Link href="/cgv" target="_blank">CGV en vigueur</Link>.</strong>
               </span>
             </label>
+            {!quote.cgvVersionId ? <p className="cart-storefront-error" role="alert">Les CGV en vigueur sont indisponibles. La souscription reste en attente.</p> : null}
             {message ? <p className="cart-storefront-error" role="alert">{message}</p> : null}
             <div className="subscription-review-actions">
-              <button className="button" disabled={!accepted || pending} onClick={() => void startCheckout()} type="button">
+              <button className="button" disabled={!accepted || !quote.cgvVersionId || pending} onClick={() => void startCheckout()} type="button">
                 {pending ? "Préparation…" : "Continuer vers le paiement"}
               </button>
               <Link className="button button-secondary" href="/panier">Modifier le panier</Link>

@@ -104,7 +104,7 @@ export default async function AdminPublicPackCatalogPage() {
                     </td>
                     <td>
                       {formatCurrencyFromCents(pack.baselineMonthlyAmountCents)}
-                      {" / mois"}
+                      {" TTC / mois"}
                     </td>
                     <td>
                       <Link

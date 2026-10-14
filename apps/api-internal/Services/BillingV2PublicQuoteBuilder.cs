@@ -27,7 +27,9 @@ public static class BillingV2PublicQuoteBuilder
         BillingV2PublicCatalogSnapshot catalog,
         BillingV2PublicSelection selection,
         IBillingV2PricingEngine pricing,
-        BillingV2AuthoritativeCheckoutReadiness checkoutReadiness)
+        BillingV2AuthoritativeCheckoutReadiness checkoutReadiness,
+        bool inclusiveTaxRateConfigured = true,
+        bool bpceSellerVatReady = true)
     {
         var resolution = BillingV2PublicSelectionPolicy.Resolve(
             catalog,
@@ -51,8 +53,7 @@ public static class BillingV2PublicQuoteBuilder
             commitment?.Option(selection.PaymentMode)?.DiscountBasisPoints ?? 0;
         var months = Math.Max(1, commitment?.Months ?? 1);
 
-        var result = pricing.Calculate(new BillingV2PricingRequest(
-            resolution.Lines
+        var pricingItems = resolution.Lines
                 .Select(line => new BillingV2PricingItem(
                     $"{line.ServiceCode}/{line.TierCode ?? "-"}#{line.BillingCadence}",
                     line.ServiceCode,
@@ -65,7 +66,9 @@ public static class BillingV2PublicQuoteBuilder
                     // projection d'engagement.
                     line.BillingCadence,
                     line.DiscountEligible))
-                .ToArray(),
+                .ToArray();
+        var result = pricing.Calculate(new BillingV2PricingRequest(
+            pricingItems,
             discountBasisPoints,
             selection.PaymentMode,
             months,
@@ -91,6 +94,12 @@ public static class BillingV2PublicQuoteBuilder
         var monthlyAfterDiscountCents = upfront
             ? (result.UpfrontRecurringAmountCents + months / 2) / months
             : result.PayableRecurringAmountCents;
+        var quoteTimeUtc = DateTime.UtcNow;
+        var vatDecision = BillingVatPolicy.Resolve(
+            "FR", quoteTimeUtc, quoteTimeUtc.AddDays(1));
+        var fiscalTotals = BillingVatPolicy.ProjectInitialChargeTotals(
+            pricingItems, result, selection.PaymentMode, months,
+            discountBasisPoints, catalog.Currency, vatDecision);
 
         // Coherence devis / rail : le perimetre de lancement est la meme
         // autorite des deux cotes. Sans cela, l'interface pouvait proposer un
@@ -99,10 +108,16 @@ public static class BillingV2PublicQuoteBuilder
         var scope = BillingV2LaunchScope.EvaluateCheckout(
             "stripe",
             selection.PaymentMode,
-            taxAmountCents: 0);
-        var checkoutAuthorized = checkoutReadiness.Authorized && scope.IsValid;
+            taxAmountCents: fiscalTotals.TaxAmountCents);
+        var checkoutAuthorized = checkoutReadiness.Authorized && scope.IsValid
+            && (!vatDecision.RateBasisPoints.HasValue
+                || inclusiveTaxRateConfigured && bpceSellerVatReady);
         var checkoutReasonCode = checkoutReadiness.Authorized
-            ? scope.ReasonCode
+            ? !inclusiveTaxRateConfigured && vatDecision.RateBasisPoints.HasValue
+                ? "BILLING_V2_STRIPE_INCLUSIVE_TAX_RATE_REQUIRED"
+                : !bpceSellerVatReady && vatDecision.RateBasisPoints.HasValue
+                    ? "BILLING_V2_BPCE_SELLER_IDENTITY_UNVERIFIED"
+                : scope.ReasonCode
             : checkoutReadiness.ReasonCode;
 
         return new BillingV2PublicQuote(
@@ -127,6 +142,11 @@ public static class BillingV2PublicQuoteBuilder
             checkoutAuthorized
                 ? BillingV2PublicCheckoutModes.Native
                 : BillingV2PublicCheckoutModes.Unavailable,
-            checkoutReasonCode);
+            checkoutReasonCode,
+            fiscalTotals.NetAmountCents,
+            fiscalTotals.TaxAmountCents,
+            vatDecision.RateBasisPoints,
+            vatDecision.Treatment,
+            BillingVatPolicy.PolicyVersion);
     }
 }

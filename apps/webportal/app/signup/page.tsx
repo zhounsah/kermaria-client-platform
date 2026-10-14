@@ -119,7 +119,7 @@ export default async function SignupPage({
             <p className="eyebrow">Offre sélectionnée</p>
             <h2>{billingV2PresetName ?? "Votre offre"}</h2>
             <p>
-              <strong>{formatCurrencyFromCents(billingV2Quote.monthlyAfterDiscountCents)} / mois</strong>
+              <strong>{formatCurrencyFromCents(billingV2Quote.monthlyAfterDiscountCents)} TTC / mois</strong>
               {" - "}{billingV2Quote.commitmentMonths} mois,
               {billingV2Quote.paymentMode === "upfront" ? " paiement comptant" : " paiement mensuel"}.
             </p>

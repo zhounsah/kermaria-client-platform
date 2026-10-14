@@ -18,7 +18,8 @@ function isCheckoutRequest(
   return typeof candidate.cartId === "string"
     && Number.isInteger(candidate.expectedCartVersion)
     && Number.isInteger(candidate.acceptedQuoteVersion)
-    && typeof candidate.acceptedCompositionFingerprint === "string";
+    && typeof candidate.acceptedCompositionFingerprint === "string"
+    && typeof candidate.acceptedCgvVersionId === "string";
 }
 
 export async function POST(request: NextRequest) {
@@ -84,6 +85,7 @@ export async function POST(request: NextRequest) {
         acceptedQuoteVersion: payload.acceptedQuoteVersion,
         acceptedCompositionFingerprint:
           payload.acceptedCompositionFingerprint,
+        acceptedCgvVersionId: payload.acceptedCgvVersionId,
 
         successUrl: `${portalUrl}/souscription?status=return`,
         cancelUrl: `${portalUrl}/panier`,

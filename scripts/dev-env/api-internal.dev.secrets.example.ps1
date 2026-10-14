@@ -13,6 +13,7 @@
 # $env:DEV_API_STRIPE_SECRET_KEY = '<cle-stripe-test>'
 # $env:DEV_API_STRIPE_PUBLISHABLE_KEY = '<cle-publique-stripe-test>'
 # $env:DEV_API_STRIPE_WEBHOOK_SECRET = '<secret-webhook-stripe-test>'
+# $env:DEV_API_STRIPE_FR_VAT20_INCLUSIVE_TAX_RATE_ID = '<txr-test-fr-20-inclusif>'
 # $env:DEV_API_AD_SERVICE_ACCOUNT_USERNAME = '<compte-ad-dev>'
 # $env:DEV_API_AD_SERVICE_ACCOUNT_PASSWORD = '<secret>'
 # $env:DEV_API_SMTP_USERNAME = '<identifiant-smtp>'

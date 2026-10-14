@@ -603,6 +603,8 @@ public sealed class BillingV2DocumentIssuerService
         long NetAmountCents,
         long TaxAmountCents,
         long TotalAmountCents,
+        int? TaxRateBasisPoints,
+        string? TaxTreatment,
         string Currency,
         string ServicePriceId,
         int DisplayOrder);
@@ -695,6 +697,7 @@ public sealed class BillingV2DocumentIssuerService
                 SELECT service_code, tier_code, description, quantity,
                        unit_amount_cents, gross_amount_cents,
                        discount_allocated_amount_cents, net_amount_cents,
+                       tax_rate_basis_points, tax_treatment,
                        tax_amount_cents, total_amount_cents, currency,
                        service_price_id, display_order
                 FROM billing_v2_billing_event_lines
@@ -719,6 +722,12 @@ public sealed class BillingV2DocumentIssuerService
                     reader.GetInt64("net_amount_cents"),
                     reader.GetInt64("tax_amount_cents"),
                     reader.GetInt64("total_amount_cents"),
+                    reader.IsDBNull(reader.GetOrdinal("tax_rate_basis_points"))
+                        ? null
+                        : reader.GetInt32("tax_rate_basis_points"),
+                    reader.IsDBNull(reader.GetOrdinal("tax_treatment"))
+                        ? null
+                        : reader.GetString("tax_treatment"),
                     reader.GetString("currency"),
                     MariaDbIdentifierReader.ReadRequired(
                         reader,
@@ -876,11 +885,12 @@ public sealed class BillingV2DocumentIssuerService
                     line.GrossAmountCents,
                     line.DiscountAmountCents,
                     line.NetAmountCents,
-                    TaxRateBasisPoints: null,
+                    line.TaxRateBasisPoints,
                     line.TaxAmountCents,
                     line.TotalAmountCents,
                     line.Currency,
-                    (line.DisplayOrder + 1) * 10),
+                    (line.DisplayOrder + 1) * 10,
+                    line.TaxTreatment ?? BillingVatPolicy.ReviewRequired),
                 now,
                 cancellationToken);
         }
@@ -1506,6 +1516,8 @@ public sealed class BillingV2DocumentIssuerService
                 unit_label,
                 unit_price_cents,
                 tax_rate_basis_points,
+                tax_treatment,
+                fiscal_mention_snapshot,
                 line_total_cents,
                 sort_order,
                 created_at,
@@ -1519,6 +1531,8 @@ public sealed class BillingV2DocumentIssuerService
                 @unit_label,
                 @unit_price_cents,
                 @tax_rate_basis_points,
+                @tax_treatment,
+                @fiscal_mention,
                 @line_total_cents,
                 @sort_order,
                 @created_at,
@@ -1538,6 +1552,9 @@ public sealed class BillingV2DocumentIssuerService
             line.TaxRateBasisPoints is null
                 ? DBNull.Value
                 : line.TaxRateBasisPoints);
+        command.Parameters.AddWithValue("@tax_treatment", line.TaxTreatment);
+        command.Parameters.AddWithValue("@fiscal_mention",
+            BillingVatPolicy.Mention(line.TaxTreatment));
         command.Parameters.AddWithValue(
             "@line_total_cents",
             checked((int)line.NetLineAmountCents));
@@ -1575,6 +1592,7 @@ public sealed class BillingV2DocumentIssuerService
                 discount_amount_cents,
                 net_line_amount_cents,
                 tax_rate_basis_points,
+                tax_treatment,
                 tax_amount_cents,
                 final_line_amount_cents,
                 currency,
@@ -1594,6 +1612,7 @@ public sealed class BillingV2DocumentIssuerService
                 @discount_amount_cents,
                 @net_line_amount_cents,
                 @tax_rate_basis_points,
+                @tax_treatment,
                 @tax_amount_cents,
                 @final_line_amount_cents,
                 @currency,
@@ -1636,6 +1655,7 @@ public sealed class BillingV2DocumentIssuerService
             line.TaxRateBasisPoints is null
                 ? DBNull.Value
                 : line.TaxRateBasisPoints);
+        command.Parameters.AddWithValue("@tax_treatment", line.TaxTreatment);
         command.Parameters.AddWithValue("@tax_amount_cents", line.TaxAmountCents);
         command.Parameters.AddWithValue(
             "@final_line_amount_cents",
@@ -1839,7 +1859,8 @@ public sealed record BillingV2DocumentLinePlan(
     long TaxAmountCents,
     long FinalLineAmountCents,
     string Currency,
-    int SortOrder);
+    int SortOrder,
+    string TaxTreatment = BillingVatPolicy.ReviewRequired);
 
 public static class BillingV2DocumentSnapshotPlanner
 {
@@ -1969,9 +1990,8 @@ public static class BillingV2DocumentSnapshotPlanner
             int order)
         {
             var grossLine = checked(GrossLineAmount(item) * recurringMultiplier);
-            var tax = item.TaxRateBasisPoints.HasValue
-                ? ApplyBasisPoints(netLineAmountCents, item.TaxRateBasisPoints.Value)
-                : 0;
+            var vatDecision = BillingVatPolicy.Resolve("FR", start, end);
+            var fiscal = BillingVatPolicy.Split(netLineAmountCents, vatDecision);
             var tier = string.IsNullOrWhiteSpace(item.TierName)
                 ? string.Empty
                 : $" - {item.TierName}";
@@ -1989,12 +2009,13 @@ public static class BillingV2DocumentSnapshotPlanner
                 item.AmountCentsSnapshot,
                 grossLine,
                 grossLine - netLineAmountCents,
-                netLineAmountCents,
-                item.TaxRateBasisPoints,
-                tax,
-                checked(netLineAmountCents + tax),
+                fiscal.NetAmountCents,
+                vatDecision.RateBasisPoints,
+                fiscal.TaxAmountCents,
+                fiscal.TotalAmountCents,
                 item.Currency,
-                order);
+                order,
+                vatDecision.Treatment);
         }
     }
 

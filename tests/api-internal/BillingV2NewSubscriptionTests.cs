@@ -32,6 +32,7 @@ public static class BillingV2NewSubscriptionTests
         VerifyAuthoritativeCheckoutBlocksIncompleteProviderMappings();
         VerifyAuthoritativeCheckoutBlocksWithoutV2DocumentIssuer();
         VerifyAuthoritativeCheckoutAllowsWhenV2DocumentIssuerReady();
+        await VerifyBpceSellerVatGateAsync();
         VerifyDocumentSnapshotPlannerPreservesContractedFinancials();
         VerifyDocumentSnapshotPlannerUsesPriceLockInsteadOfCurrentItems();
         VerifyProviderPriceMappingsExposeResolvedProviderIds();
@@ -54,7 +55,7 @@ public static class BillingV2NewSubscriptionTests
         VerifyProviderCheckoutSessionPolicyAcceptsSameReplay();
         VerifyProviderCheckoutSessionPolicyRejectsDivergentProviderIds();
         VerifyDisabledProviderExecutorCannotExecute();
-        await VerifyStripeProviderExecutorUsesFakeHttpAndParsesCheckoutAsync();
+        await VerifyLegacyPriceIdCheckoutBlockedAsync();
         await VerifyPayPalProviderExecutorUsesFakeHttpAndParsesSubscriptionAsync();
         VerifyProviderInboundReturnLinksLocalSession();
         VerifyProviderInboundReturnDoesNotTriggerProvisioning();
@@ -551,11 +552,41 @@ public static class BillingV2NewSubscriptionTests
             "Le checkout V2 autoritaire ne doit devenir autorisable que si schema, providers, validation humaine et document issuer V2 sont prets.");
     }
 
+    private static async Task VerifyBpceSellerVatGateAsync()
+    {
+        var configuration = new SqlRuntimeConfiguration(
+            PortalPersistenceMode.MariaDb, "mariadb", "not-used", "dev", true);
+        var bpce = new BpceRuntimeConfiguration(
+            BpceIntegrationMode.Live, "https://bpce.invalid", "test", "1",
+            10000, true, SellerVatNumberConfirmed: false);
+        var service = new BillingV2DocumentReadinessService(
+            configuration, bpce,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<
+                BillingV2DocumentReadinessService>.Instance);
+        var decision = await service.CheckAsync(CancellationToken.None);
+        Ensure(!decision.Ready
+            && decision.ReasonCode == "BILLING_V2_BPCE_SELLER_IDENTITY_UNVERIFIED",
+            "Une configuration BPCE live sans preuve du numero TVA vendeur bloque le Checkout avant toute lecture SQL.");
+        var vatOnly = bpce with { SellerVatNumberConfirmed = true };
+        var eiMissing = await new BillingV2DocumentReadinessService(
+            configuration, vatOnly,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<
+                BillingV2DocumentReadinessService>.Instance)
+            .CheckAsync(CancellationToken.None);
+        Ensure(!eiMissing.Ready
+            && eiMissing.ReasonCode == "BILLING_V2_BPCE_SELLER_IDENTITY_UNVERIFIED"
+            && !(vatOnly.SellerInvoiceIdentityConfirmed)
+            && (vatOnly with { SellerEiMentionConfirmed = true })
+                .SellerInvoiceIdentityConfirmed,
+            "La preuve du numero TVA seule ne doit pas autoriser BPCE si la mention EI manque sur le PDF.");
+    }
+
     private static void VerifyDocumentSnapshotPlannerPreservesContractedFinancials()
     {
         var source = DocumentSource(
             discountBasisPoints: 1000,
             paymentMode: BillingV2PaymentModes.Monthly,
+            createdAtUtc: new DateTime(2026, 10, 13, 9, 0, 0, DateTimeKind.Utc),
             items:
             [
                 DocumentItem(
@@ -579,15 +610,15 @@ public static class BillingV2NewSubscriptionTests
         var plan = BillingV2DocumentSnapshotPlanner.Plan(source);
 
         Ensure(
-            plan.SubtotalAmountCents == 13500
+            plan.SubtotalAmountCents == 11250
             && plan.DiscountAmountCents == 1500
-            && plan.TaxAmountCents == 2700
-            && plan.TotalAmountCents == 16200
+            && plan.TaxAmountCents == 2250
+            && plan.TotalAmountCents == 13500
             && plan.Lines.Count == 2
             && plan.Lines[0].GrossUnitAmountCents == 10000
             && plan.Lines[0].DiscountAmountCents == 1000
-            && plan.Lines[0].NetLineAmountCents == 9000
-            && plan.Lines[0].TaxAmountCents == 1800
+            && plan.Lines[0].NetLineAmountCents == 7500
+            && plan.Lines[0].TaxAmountCents == 1500
             && plan.Lines[1].DiscountAmountCents == 500,
             "Le document V2 doit snapshotter prix unitaires, quantites, remise, taxes et total final sans relire le catalogue courant.");
     }
@@ -1177,7 +1208,7 @@ public static class BillingV2NewSubscriptionTests
             "L'executor provider V2 par defaut doit etre explicitement disabled.");
     }
 
-    private static async Task VerifyStripeProviderExecutorUsesFakeHttpAndParsesCheckoutAsync()
+    private static async Task VerifyLegacyPriceIdCheckoutBlockedAsync()
     {
         var command = BillingV2ProviderCheckoutCommandPlanner.Plan(
             ProviderCheckoutRequest(ReadyCheckoutDecision()));
@@ -1232,12 +1263,10 @@ public static class BillingV2NewSubscriptionTests
             CancellationToken.None);
 
         Ensure(
-            result.Succeeded
-            && result.ProviderCheckoutId == "cs_v2_fake"
-            && result.ProviderSubscriptionId is null
-            && result.ApprovalUrl == "https://checkout.stripe.test/session"
-            && handler.Requests.Count == 1,
-            "L'executor Stripe V2 doit parser la session checkout et l'URL d'approbation sans abonnement fournisseur local invente.");
+            !result.Succeeded
+            && result.Code == "BILLING_V2_PRICE_ID_TAX_CLASSIFICATION_REQUIRED"
+            && handler.Requests.Count == 0,
+            "L'ancien chemin Price ID doit refuser un nouvel appel Stripe sans qualification TVA.");
     }
 
     private static async Task VerifyPayPalProviderExecutorUsesFakeHttpAndParsesSubscriptionAsync()
@@ -2302,7 +2331,8 @@ public static class BillingV2NewSubscriptionTests
         int discountBasisPoints,
         string paymentMode,
         IReadOnlyList<BillingV2DocumentSourceItem> items,
-        BillingV2DocumentPriceLock? priceLock = null)
+        BillingV2DocumentPriceLock? priceLock = null,
+        DateTime? createdAtUtc = null)
         => new(
             new BillingV2DocumentSubscriptionSource(
                 "sub-v2",
@@ -2312,7 +2342,7 @@ public static class BillingV2NewSubscriptionTests
                 "EUR",
                 discountBasisPoints,
                 MinimumCommitmentAmountCents: null,
-                new DateTime(2026, 8, 13, 9, 0, 0, DateTimeKind.Utc),
+                createdAtUtc ?? new DateTime(2026, 8, 13, 9, 0, 0, DateTimeKind.Utc),
                 CommitmentMonths: 12,
                 "CUST-V2",
                 "Client V2"),

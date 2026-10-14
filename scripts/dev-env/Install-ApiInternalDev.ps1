@@ -149,6 +149,22 @@ try {
             $existingService.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
         }
 
+        # SCM peut annoncer Stopped avant la liberation du binaire par le
+        # processus enfant. Le renommage de l'ancien repertoire echoue alors
+        # avec Access denied et laisse DEV arretee. Attendre la sortie reelle,
+        # sans tuer un processus ni toucher au service PROD.
+        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        do {
+            $stillRunning = @(Get-CimInstance Win32_Process `
+                -Filter "Name = 'Kermaria.ApiInternal.exe'" |
+                Where-Object { $_.ExecutablePath -eq (Join-Path $appDir 'Kermaria.ApiInternal.exe') })
+            if ($stillRunning.Count -eq 0) { break }
+            Start-Sleep -Milliseconds 500
+        } while ([DateTime]::UtcNow -lt $deadline)
+        if ($stillRunning.Count -gt 0) {
+            throw 'Le processus API DEV garde encore le binaire ouvert apres arret du service.'
+        }
+
         if (Test-Path -LiteralPath $appDir) {
             Rename-Item -LiteralPath $appDir -NewName "api-internal-dev-old-$stamp"
         }

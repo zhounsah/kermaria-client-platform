@@ -171,7 +171,21 @@ trigger, fonction ou procédure demandera le même traitement.
 La réplication étant sans filtre, `kermaria_dev` et ses comptes sont aussi
 répliqués sur SRV-07/SRV-08.
 
-## 5. Stripe TEST (à finaliser)
+## 5. Stripe TEST
+
+**TVA DEV au 13 octobre 2026.** Le Tax Rate manuel `txr_1UQDalPjVmQIehZaMl0py06U`
+est inclusif, à 20 %, pays FR, `livemode=false`. L'API DEV lit son identifiant
+via `STRIPE_FR_VAT20_INCLUSIVE_TAX_RATE_ID` dans son JSON autoritaire. Valider
+le compte Test et les propriétés du taux avant de réutiliser cet identifiant.
+Le compte Live et ses abonnements ne sont pas modifiés. Le mode BPCE de l'API
+DEV est `live` : les essais d'émission/PDF doivent utiliser le fournisseur mock
+tant qu'aucune procédure de test BPCE sans émission fiscale n'est validée.
+Le PDF BPCE réel des factures DEV d'octobre porte bien le numéro
+`FR85105111520`, mais le nom du vendeur n'y est pas suivi de `EI` ou
+`Entrepreneur individuel`. `BPCE_SELLER_VAT_NUMBER_CONFIRMED` et
+`BPCE_SELLER_EI_MENTION_CONFIRMED` restent donc absents/faux : les nouveaux
+Checkouts taxables et les émissions BPCE réelles restent fermés. La lecture
+des anciennes factures n'est pas affectée.
 
 1. Tableau de bord Stripe, **mode Test** : récupérer `sk_test_…` et `pk_test_…`.
 2. Les renseigner dans le fichier de secrets DEV (`DEV_STRIPE_SECRET_KEY`,

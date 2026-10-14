@@ -488,6 +488,7 @@ public static class BillingV2FinancialCoreStore
                     service_code, tier_code, description, billing_cadence,
                     quantity, unit_amount_cents, gross_amount_cents,
                     discount_allocated_amount_cents, net_amount_cents,
+                    tax_rate_basis_points, tax_treatment,
                     tax_amount_cents, total_amount_cents, currency,
                     period_start, period_end, display_order, created_at
                 ) VALUES (
@@ -497,6 +498,7 @@ public static class BillingV2FinancialCoreStore
                     @service_code, @tier_code, @description, @cadence,
                     @quantity, @unit, @gross,
                     @discount, @net,
+                    @tax_rate, @tax_treatment,
                     @tax, @total, @currency,
                     @period_start, @period_end, @display_order, @now
                 );
@@ -532,6 +534,12 @@ public static class BillingV2FinancialCoreStore
                 "@discount",
                 line.DiscountAllocatedAmountCents);
             command.Parameters.AddWithValue("@net", line.NetAmountCents);
+            command.Parameters.AddWithValue("@tax_rate",
+                line.TaxRateBasisPoints is null
+                    ? DBNull.Value
+                    : line.TaxRateBasisPoints.Value);
+            command.Parameters.AddWithValue("@tax_treatment",
+                line.TaxTreatment);
             command.Parameters.AddWithValue("@tax", line.TaxAmountCents);
             command.Parameters.AddWithValue("@total", line.TotalAmountCents);
             command.Parameters.AddWithValue("@currency", line.Currency);
@@ -702,6 +710,8 @@ public static class BillingV2FinancialCoreStore
                 COALESCE(SUM(CASE WHEN line.billing_cadence <> 'one_time'
                                   THEN line.total_amount_cents ELSE 0 END), 0)
                     AS recurring_amount_cents,
+                MAX(CASE WHEN line.tax_treatment = 'fr_standard' THEN 1 ELSE 0 END)
+                    AS french_taxable,
                 COUNT(line.id) AS line_count
             FROM billing_v2_billing_events event_row
             LEFT JOIN billing_v2_billing_event_lines line
@@ -730,7 +740,8 @@ public static class BillingV2FinancialCoreStore
             reader.GetInt64("recurring_amount_cents"),
             reader.GetInt64("one_time_amount_cents"),
             reader.GetInt64("tax_amount_cents"),
-            reader.GetInt32("line_count"));
+            reader.GetInt32("line_count"),
+            Convert.ToInt32(reader.GetValue(reader.GetOrdinal("french_taxable"))) != 0);
     }
 
     public static async Task ApplySettlementAsync(

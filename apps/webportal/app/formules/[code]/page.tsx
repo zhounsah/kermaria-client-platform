@@ -67,7 +67,7 @@ export default async function FormuleConfigurationPage({ params, searchParams }:
     <p className="formule-baseline">
       Configuration recommandée :{" "}
       <strong>{formatCurrencyFromCents(preset.baselineMonthlyAmountCents)}</strong>{" "}
-      / mois sans engagement. Ajustez ci-dessous, le prix suit.
+      TTC / mois sans engagement. Ajustez ci-dessous, le prix suit.
     </p>
   </header>;
   const configurator = <BillingV2FormuleConfigurator

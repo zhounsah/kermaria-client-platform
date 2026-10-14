@@ -354,7 +354,10 @@ public static class BillingV2CartSchemaTests
     private static BillingV2CartService CreateCartService(string connectionString)
         => new(new SqlRuntimeConfiguration(PortalPersistenceMode.MariaDb,
                 "mariadb", connectionString, "disposable-test", true),
-            null!, null!, NullLogger<BillingV2CartService>.Instance);
+            null!, null!,
+            new BpceRuntimeConfiguration(BpceIntegrationMode.Mock, "",
+                null, null, 10000, true),
+            NullLogger<BillingV2CartService>.Instance);
 
     private static async Task VerifyConcurrentClaimKeepsAccountCartAsync(string connectionString,
         string token, string ownerHash, string customerId, string accountCartId, string anonymousCartId)

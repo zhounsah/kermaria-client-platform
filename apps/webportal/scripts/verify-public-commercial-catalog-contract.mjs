@@ -26,8 +26,9 @@ assert.match(projection, /catalog\.services[\s\S]*filter\(\(service\) => service
 assert.match(projection, /service\.flatMonthlyAmountCents/);
 assert.match(projection, /tier\.monthlyAmountCents/);
 assert.match(projection, /billingCadence === "one_time"[\s\S]*chargeTrigger === "initial_subscription"/);
-assert.match(projection, /TAX_NOTICE = "Montants affichés hors taxes applicables\."/);
-assert.match(projection, /autorite fiscale suffisante/);
+assert.match(projection, /TAX_NOTICE = "Prix TTC pour une opération française taxable/);
+assert.match(tariffsComponent, /frenchNetHint\(service\.startingPrice\)/);
+assert.match(projection, /ventilation indicative française proviennent d'API-INTERNAL/);
 assert.match(projection, /ne signifie pas qu'un service est achetable seul/);
 assert.match(projection, /resolvePublicCommercialOrdering/);
 assert.match(projection, /service\.publicOrderingMode/);

@@ -65,6 +65,14 @@ public sealed class BillingV2DocumentReadinessService
         {
             return BillingV2DocumentReadinessStatus.NotReady;
         }
+        if (_bpce.Mode is BpceIntegrationMode.Live
+            && !_bpce.SellerInvoiceIdentityConfirmed)
+        {
+            return new BillingV2DocumentReadinessStatus(
+                false,
+                "BILLING_V2_BPCE_SELLER_IDENTITY_UNVERIFIED",
+                "Le numéro de TVA et la mention EI du vendeur doivent être vérifiés sur un PDF BPCE réel avant tout nouveau Checkout taxable.");
+        }
 
         try
         {

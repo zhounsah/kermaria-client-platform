@@ -217,7 +217,7 @@ public static class EmailTemplates
         {
             ["customerName"] = customerName,
             ["documentLabel"] = fiscalNumber ?? documentReference,
-            ["amount"] = FormatAmount(totalAmountCents, currency),
+            ["amount"] = FormatAmount(totalAmountCents, currency) + " TTC",
         };
         if (portalUrl is not null)
         {

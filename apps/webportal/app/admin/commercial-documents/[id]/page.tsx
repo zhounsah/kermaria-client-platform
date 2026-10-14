@@ -74,12 +74,11 @@ export default async function AdminCommercialDocumentDetailPage({
   const lineTemplates = catalogResult.error
     ? []
     : buildCatalogLineTemplates(catalogResult.data);
-  const isFranchiseBaseDocument =
+  const isNonTaxableDocument =
     document.lines.length > 0
-    && document.lines.every((line) => line.fiscalRegime === "franchise_base");
-  const fiscalMention =
-    document.lines.find((line) => line.fiscalRegime === "franchise_base")
-      ?.fiscalMention;
+    && document.lines.every((line) => line.fiscalRegime !== "standard");
+  const nonTaxableLine = document.lines.find((line) => line.fiscalRegime !== "standard");
+  const fiscalReviewRequired = document.lines.some((line) => line.fiscalRegime === "review_required");
   const status = commercialDocumentStatus[document.status] ?? {
     label: document.status,
     tone: "slate",
@@ -138,16 +137,17 @@ export default async function AdminCommercialDocumentDetailPage({
             <div><dt>Mise à jour</dt><dd>{formatDateTime(document.updatedAt)}</dd></div>
             <div><dt>Partagé le</dt><dd>{document.sharedAt ? formatDateTime(document.sharedAt) : "Non partagé"}</dd></div>
             <div><dt>Demande liée</dt><dd>{document.serviceRequestId && document.serviceRequestReference ? <Link href={`/admin/service-requests/${encodeURIComponent(document.serviceRequestId)}`}>{document.serviceRequestReference}</Link> : "Aucune"}</dd></div>
-            <div><dt>{isFranchiseBaseDocument ? "Sous-total" : "Sous-total HT"}</dt><dd>{formatCurrencyFromCents(document.subtotalAmountCents)}</dd></div>
+            {fiscalReviewRequired ? <div><dt>Revue fiscale</dt><dd>Qualification à vérifier ; pièce d&apos;origine conservée sans modification.</dd></div> : null}
+            <div><dt>{isNonTaxableDocument ? "Sous-total" : "Sous-total HT"}</dt><dd>{formatCurrencyFromCents(document.subtotalAmountCents)}</dd></div>
             <div>
-              <dt>{isFranchiseBaseDocument ? "Fiscalité" : "Taxes"}</dt>
+              <dt>{isNonTaxableDocument ? "Fiscalité" : "TVA"}</dt>
               <dd>
-                {isFranchiseBaseDocument
-                  ? formatFiscalMention("franchise_base", fiscalMention)
+                {isNonTaxableDocument && nonTaxableLine
+                  ? formatFiscalMention(nonTaxableLine.fiscalRegime, nonTaxableLine.fiscalMention)
                   : formatCurrencyFromCents(document.taxAmountCents)}
               </dd>
             </div>
-            <div><dt>Total informatif</dt><dd>{formatCurrencyFromCents(document.totalAmountCents)}</dd></div>
+            <div><dt>Total TTC informatif</dt><dd>{formatCurrencyFromCents(document.totalAmountCents)}</dd></div>
           </dl>
           <p className="request-description">{document.disclaimer}</p>
         </SectionCard>

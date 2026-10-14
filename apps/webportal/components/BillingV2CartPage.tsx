@@ -483,6 +483,9 @@ function CartQuoteSummary({ cart, quote }: { cart: BillingV2Cart | null; quote: 
             recurringSubtotalCents={quote.recurringSubtotalCents}
             recurringTotalCents={quote.recurringTotalCents}
             totalDueNowCents={quote.totalDueNowCents}
+            subtotalBeforeTaxCents={quote.subtotalBeforeTaxCents}
+            taxAmountCents={quote.taxAmountCents}
+            taxRateBasisPoints={quote.taxRateBasisPoints}
           />
           {blockers.length > 0 ? (
             <div className="cart-storefront-summary-warning" role="alert">

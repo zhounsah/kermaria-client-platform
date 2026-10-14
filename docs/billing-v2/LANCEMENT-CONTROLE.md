@@ -156,12 +156,16 @@ WHERE price.status = 'active'
 
 ## C. Périmètre de lancement
 
-Autorisé : Stripe ; paiement mensuel ; offres mensuelles prévues ; portail ;
-facturation et document ; provisioning sous gate.
+Autorisé : Stripe ; paiement mensuel ou comptant prévu par le contrat ; portail ;
+facturation et document ; provisioning sous gate. Depuis le 01/10/2026,
+une opération française au taux normal porte une TVA incluse de 20 % seulement
+si le taux Stripe et le numéro TVA vendeur sur le PDF BPCE sont vérifiés.
 
-Interdit : PayPal ; paiement upfront 6/12 mois ; upgrades/downgrades
+Interdit : PayPal ; upgrades/downgrades
 self-service ; Credit Ledger ; remboursements automatiques ; chargebacks
-automatiques ; résiliation self-service ; TVA non nulle.
+automatiques ; résiliation self-service ; taxation automatique d'un pays ou
+traitement non qualifié. Les contrats antérieurs restent en revue avant toute
+modification de leur abonnement fournisseur.
 
 Ce périmètre n'est pas déclaratif : `BillingV2LaunchScope` le refuse sur le
 chemin de dispatch, avec les codes `BILLING_V2_SCOPE_*`.

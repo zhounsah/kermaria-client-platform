@@ -243,7 +243,7 @@ export function BillingV2FormuleConfigurator({
                 />
                 <span className="formule-choice-label">{tier.label}</span>
                 <span className="formule-choice-price">
-                  {formatCurrencyFromCents(tier.monthlyAmountCents)} / mois
+                  {formatCurrencyFromCents(tier.monthlyAmountCents)} TTC / mois
                 </span>
               </label>
             ))}
@@ -301,7 +301,7 @@ export function BillingV2FormuleConfigurator({
                 />
                 <span className="formule-choice-label">{tier.label}</span>
                 <span className="formule-choice-price">
-                  {formatCurrencyFromCents(tier.monthlyAmountCents)} / mois
+                  {formatCurrencyFromCents(tier.monthlyAmountCents)} TTC / mois
                 </span>
               </label>
             ))}
@@ -359,7 +359,7 @@ export function BillingV2FormuleConfigurator({
                   ) : null}
                 </span>
                 <span className="formule-choice-price">
-                  {formatCurrencyFromCents(tier.monthlyAmountCents)} / mois
+                  {formatCurrencyFromCents(tier.monthlyAmountCents)} TTC / mois
                 </span>
               </label>
             ))}
@@ -390,7 +390,7 @@ export function BillingV2FormuleConfigurator({
                   {formatCurrencyFromCents(
                     remoteDesktop.flatMonthlyAmountCents,
                   )}{" "}
-                  / mois
+                  TTC / mois
                 </em>
               ) : null}
             </span>
@@ -415,7 +415,7 @@ export function BillingV2FormuleConfigurator({
                   {formatCurrencyFromCents(
                     additionalUser.flatMonthlyAmountCents,
                   )}{" "}
-                  / mois et par personne
+                  TTC / mois et par personne
                 </em>
               ) : null}
             </span>
@@ -464,7 +464,7 @@ export function BillingV2FormuleConfigurator({
                   {formatCurrencyFromCents(
                     supportPlus.flatMonthlyAmountCents,
                   )}{" "}
-                  / mois
+                  TTC / mois
                 </em>
               ) : null}
             </span>
@@ -600,9 +600,12 @@ export function BillingV2FormuleConfigurator({
               finalPeriodLabel={isUpfront ? null : " / mois"}
               showDueNow={!isUpfront}
               totalDueNowCents={quote.totalDueNowCents}
+              subtotalBeforeTaxCents={quote.subtotalBeforeTaxCents}
+              taxAmountCents={quote.taxAmountCents}
+              taxRateBasisPoints={quote.taxRateBasisPoints}
             />
             {isUpfront ? <p className="formule-summary-note formule-summary-note-secondary">
-              Soit par mois : <strong>{formatCurrencyFromCents(quote.monthlyAfterDiscountCents)} / mois équivalent</strong>
+              Soit par mois : <strong>{formatCurrencyFromCents(quote.monthlyAfterDiscountCents)} TTC / mois équivalent</strong>
             </p> : null}
             {quote.commitmentSavingsCents > 0 ? <p className="formule-summary-note formule-summary-note-secondary">
               Économie totale sur {quote.commitmentMonths} mois : <strong>{formatCurrencyFromCents(quote.commitmentSavingsCents)}</strong>
@@ -629,8 +632,9 @@ export function BillingV2FormuleConfigurator({
 
             <p className="formule-summary-note formule-summary-note-secondary">
               Ce montant correspond exactement à la configuration ci-dessus. Il
-              est indiqué hors taxes applicables.
+              comprend la TVA lorsqu&apos;elle est applicable en France. Le détail HT, TVA et TTC figure ci-dessus.
             </p>
+            {!quote.checkoutAvailable ? <p className="formule-summary-note" role="status">Le paiement en ligne est temporairement indisponible. Vous pouvez préparer votre panier et revenir lorsque la facturation sera vérifiée.</p> : null}
 
             <button
               type="button"
@@ -654,10 +658,10 @@ export function BillingV2FormuleConfigurator({
             {cartQuote ? (
               <p className="formule-summary-note formule-summary-note-secondary">
                 Prix confirmé dans le panier : <strong>
-                  {formatCurrencyFromCents(cartQuote.recurringTotalCents)} / mois
+                  {formatCurrencyFromCents(cartQuote.recurringTotalCents)} TTC / mois
                 </strong>
                 {cartQuote.totalDueNowCents > 0 ? <> — dû maintenant : <strong>
-                  {formatCurrencyFromCents(cartQuote.totalDueNowCents)}
+                  {formatCurrencyFromCents(cartQuote.totalDueNowCents)} TTC
                 </strong></> : null}
               </p>
             ) : null}

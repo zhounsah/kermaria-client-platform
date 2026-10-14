@@ -39,6 +39,10 @@ Ordre de lecture recommande :
 7. [`docs/releases/V2.1.0.md`](docs/releases/V2.1.0.md)
 
 Production courante : `v2.1.0`, commit `09737e2bd644c44faa80a723fc7b1ea42496b332`.
+Candidate locale `v2.1.1` : conformité TVA au 01/10/2026 préparée et
+testée sur DEV, sans tag ni déploiement PROD. Pré-état, conditions GO/NO-GO,
+migration et rollback :
+[`docs/releases/TVA_PROD_PREPARATION_2026-10-14.md`](docs/releases/TVA_PROD_PREPARATION_2026-10-14.md).
 La refonte de la vitrine, le constructeur de pages et les demandes de données
 sont livrés sur SRV-12/SRV-13. Voir les preuves et le retour arrière dans
 [`docs/releases/V2.1.0.md`](docs/releases/V2.1.0.md).

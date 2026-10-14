@@ -75,7 +75,7 @@ export default async function FormulesPage() {
                     <span className="formule-card-amount">
                       {formatCurrencyFromCents(monthlyCents)}
                     </span>
-                    <span className="formule-card-period"> / mois</span>
+                    <span className="formule-card-period"> TTC / mois</span>
                   </p>
 
                   <ul className="formule-card-list">
@@ -107,7 +107,7 @@ export default async function FormulesPage() {
               fonctionnement.
             </p>
             <p className="formules-note-secondary">
-              Les montants affichés sont hors taxes applicables.
+              Les prix destinés aux particuliers sont affichés TTC. Le détail HT et TVA est présenté avant paiement pour les opérations françaises taxables.
             </p>
           </section>,
     formules_help: <section className="formules-note">

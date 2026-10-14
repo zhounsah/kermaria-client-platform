@@ -52,6 +52,10 @@ public interface IBpceInvoicingRepository
         string? pdfHash,
         CancellationToken cancellationToken);
 
+    Task MarkInvoicePaidAsync(
+        string commercialDocumentId,
+        CancellationToken cancellationToken);
+
     Task<byte[]?> GetInvoicePdfAsync(
         string commercialDocumentId,
         CancellationToken cancellationToken);

@@ -92,12 +92,11 @@ export default async function CommercialDocumentDetailPage({
     document.paymentMethod === "manual"
       ? document.paymentMethod
       : null;
-  const isFranchiseBaseDocument =
+  const isNonTaxableDocument =
     document.lines.length > 0
-    && document.lines.every((line) => line.fiscalRegime === "franchise_base");
-  const fiscalMention =
-    document.lines.find((line) => line.fiscalRegime === "franchise_base")
-      ?.fiscalMention;
+    && document.lines.every((line) => line.fiscalRegime !== "standard");
+  const nonTaxableLine = document.lines.find((line) => line.fiscalRegime !== "standard");
+  const fiscalReviewRequired = document.lines.some((line) => line.fiscalRegime === "review_required");
 
   return (
     <>
@@ -161,17 +160,18 @@ export default async function CommercialDocumentDetailPage({
 
         <SectionCard ariaLabel="Synthèse financière">
           <h2>{isIssued ? "Montants facturés" : "Synthèse indicative"}</h2>
+          {fiscalReviewRequired ? <p className="request-description" role="alert">Le traitement fiscal de ce document doit être vérifié. La pièce d&apos;origine reste conservée sans modification.</p> : null}
           <dl className="request-details">
-            <div><dt>{isFranchiseBaseDocument ? "Sous-total" : "Sous-total HT"}</dt><dd>{formatCurrencyFromCents(document.subtotalAmountCents)}</dd></div>
+            <div><dt>{isNonTaxableDocument ? "Sous-total" : "Sous-total HT"}</dt><dd>{formatCurrencyFromCents(document.subtotalAmountCents)}</dd></div>
             <div>
-              <dt>{isFranchiseBaseDocument ? "Fiscalité" : "Taxes"}</dt>
+              <dt>{isNonTaxableDocument ? "Fiscalité" : "TVA"}</dt>
               <dd>
-                {isFranchiseBaseDocument
-                  ? formatFiscalMention("franchise_base", fiscalMention)
+                {isNonTaxableDocument && nonTaxableLine
+                  ? formatFiscalMention(nonTaxableLine.fiscalRegime, nonTaxableLine.fiscalMention)
                   : formatCurrencyFromCents(document.taxAmountCents)}
               </dd>
             </div>
-            <div><dt>Total {isIssued ? "facturé" : "indicatif"}</dt><dd>{formatCurrencyFromCents(document.totalAmountCents)}</dd></div>
+            <div><dt>Total TTC {isIssued ? "facturé" : "indicatif"}</dt><dd>{formatCurrencyFromCents(document.totalAmountCents)}</dd></div>
             <div><dt>Devise</dt><dd>{document.currency}</dd></div>
           </dl>
           {!isIssued ? (

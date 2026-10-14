@@ -46,6 +46,7 @@ type VpsConfiguration = {
 
 type Props = {
   selection: PublicVpsConfiguratorSelection;
+  cgvVersionLabel: string;
 };
 
 const INITIAL_CONFIGURATION: VpsConfiguration = {
@@ -77,7 +78,7 @@ type VpsConfiguratorDraft = {
 
 type IdentityDialogState = "closed" | "open" | "closing";
 
-export function PublicVpsConfigurator({ selection }: Props) {
+export function PublicVpsConfigurator({ selection, cgvVersionLabel }: Props) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [quote, setQuote] = useState<BillingV2PublicQuote | null>(null);
   const [technicalRequestId, setTechnicalRequestId] = useState<string | null>(null);
@@ -85,6 +86,7 @@ export function PublicVpsConfigurator({ selection }: Props) {
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [startingPayment, setStartingPayment] = useState(false);
+  const [acceptedCgv, setAcceptedCgv] = useState(false);
   const [identityDialogState, setIdentityDialogState] = useState<IdentityDialogState>(
     "closed",
   );
@@ -297,7 +299,7 @@ export function PublicVpsConfigurator({ selection }: Props) {
   }
 
   async function continueToPayment() {
-    if (!technicalRequestId || startingPayment) return;
+    if (!technicalRequestId || !acceptedCgv || !quote?.checkoutAvailable || startingPayment) return;
     setPaymentError(null);
     setStartingPayment(true);
     if (!checkoutIdempotencyKey.current) {
@@ -313,7 +315,7 @@ export function PublicVpsConfigurator({ selection }: Props) {
             "Content-Type": "application/json",
             "Idempotency-Key": checkoutIdempotencyKey.current,
           },
-          body: JSON.stringify({ technicalRequestId }),
+          body: JSON.stringify({ technicalRequestId, acceptedCgvVersionLabel: cgvVersionLabel }),
         },
       );
       if (!result.ok) {
@@ -511,13 +513,18 @@ export function PublicVpsConfigurator({ selection }: Props) {
             Votre configuration technique est enregistrée. Votre commande sera
             vérifiée une dernière fois avant l’ouverture du paiement sécurisé.
           </p>
+          {quote && !quote.checkoutAvailable ? <p className="vps-configurator-notice" role="status">Le paiement en ligne est temporairement indisponible pendant la vérification de la facturation.</p> : null}
+          <label className="vps-configurator-notice">
+            <input checked={acceptedCgv} onChange={(event) => setAcceptedCgv(event.target.checked)} type="checkbox" />
+            {" "}J’accepte les <Link href="/cgv" target="_blank">CGV en vigueur</Link> ({cgvVersionLabel}).
+          </label>
           <div className="vps-configurator-actions">
             <button className="button button-secondary" onClick={() => setStep(2)} type="button">
               Modifier la configuration
             </button>
             <button
               className="button"
-              disabled={!technicalRequestId || startingPayment}
+              disabled={!technicalRequestId || !acceptedCgv || !quote?.checkoutAvailable || startingPayment}
               onClick={continueToPayment}
               type="button"
             >
@@ -830,7 +837,7 @@ function VpsCatalogPriceSummary({
             <ul>
               {pricing.setupFees.map((fee, index) => (
                 <li key={`${fee.amountLabel}-${index}`}>
-                  Frais de mise en service&nbsp;: <strong>{fee.amountLabel}</strong>
+                  Frais de mise en service&nbsp;: <strong>{fee.amountLabel} TTC</strong>
                 </li>
               ))}
             </ul>
@@ -839,7 +846,7 @@ function VpsCatalogPriceSummary({
       </div>
       <div>
         <dt>Abonnement</dt>
-        <dd><strong>{pricing.monthlyLabel}</strong> / mois</dd>
+        <dd><strong>{pricing.monthlyLabel}</strong> TTC / mois</dd>
       </div>
     </dl>
   );
@@ -850,15 +857,17 @@ function VpsQuoteSummary({ quote }: { quote: BillingV2PublicQuote }) {
   return (
     <dl className="vps-price-summary">
       <div>
-        <dt>À payer aujourd’hui</dt>
+        <dt>À payer aujourd’hui TTC</dt>
         <dd><strong>{formatCurrencyFromCents(quote.totalDueNowCents)}</strong></dd>
         {quote.oneTimeCents > 0 ? (
-          <p className="vps-price-detail">Dont {formatCurrencyFromCents(quote.oneTimeCents)} de frais ponctuels.</p>
+          <p className="vps-price-detail">Dont {formatCurrencyFromCents(quote.oneTimeCents)} TTC de frais ponctuels.</p>
         ) : null}
       </div>
+      <div><dt>Montant HT</dt><dd>{formatCurrencyFromCents(quote.subtotalBeforeTaxCents)}</dd></div>
+      <div><dt>TVA{quote.taxRateBasisPoints !== null ? ` (${quote.taxRateBasisPoints / 100} %)` : ""}</dt><dd>{formatCurrencyFromCents(quote.taxAmountCents)}</dd></div>
       <div>
         <dt>Abonnement</dt>
-        <dd><strong>{formatCurrencyFromCents(quote.monthlyAfterDiscountCents)}</strong> / mois</dd>
+        <dd><strong>{formatCurrencyFromCents(quote.monthlyAfterDiscountCents)}</strong> TTC / mois</dd>
         {setupLines.length ? (
           <p className="vps-price-detail">{setupLines.map((line) => line.detail ?? line.label).join(" · ")}</p>
         ) : null}

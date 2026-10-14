@@ -118,7 +118,7 @@ export function BillingV2DirectCartAdd({ currency, service }: Props) {
       ) : null}
       {selectedTier?.recurringPrice ? (
         <p className="commercial-tariff-direct-price">
-          {formatMoney(selectedTier.recurringPrice)} / mois
+          {formatMoney(selectedTier.recurringPrice)} TTC / mois
         </p>
       ) : null}
       <button className="button" disabled={pending} onClick={() => void addToCart()} type="button">

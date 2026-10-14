@@ -143,7 +143,7 @@ export function PublicPackComparisonTable({
                   </div>
                   <strong>
                     {formatCurrencyFromCents(pack.baselineMonthlyAmountCents)}
-                    {" / mois"}
+                    {" TTC / mois"}
                   </strong>
                   <span className="public-pack-compare-price-caption">
                     Configuration recommandée, sans engagement

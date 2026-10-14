@@ -39,17 +39,23 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
     private readonly SqlRuntimeConfiguration _sql;
     private readonly BillingV2RuntimeConfiguration _runtime;
     private readonly IBillingV2PricingEngine _pricing;
+    private readonly StripeRuntimeConfiguration _stripe;
+    private readonly BpceRuntimeConfiguration _bpce;
     private readonly ILogger<BillingV2PublicCatalogService> _logger;
 
     public BillingV2PublicCatalogService(
         SqlRuntimeConfiguration sql,
         BillingV2RuntimeConfiguration runtime,
         IBillingV2PricingEngine pricing,
+        StripeRuntimeConfiguration stripe,
+        BpceRuntimeConfiguration bpce,
         ILogger<BillingV2PublicCatalogService> logger)
     {
         _sql = sql;
         _runtime = runtime;
         _pricing = pricing;
+        _stripe = stripe;
+        _bpce = bpce;
         _logger = logger;
     }
 
@@ -130,7 +136,11 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                 _runtime,
                 _sql.IsPersistent
                     && !string.IsNullOrWhiteSpace(_sql.ConnectionString),
-                "billing-v2-public-quote-probe"));
+                "billing-v2-public-quote-probe"),
+            _stripe.HasFrenchInclusiveVatTaxRate,
+            _bpce.Mode is BpceIntegrationMode.Mock
+                || _bpce.Mode is BpceIntegrationMode.Live
+                    && _bpce.SellerInvoiceIdentityConfirmed);
     }
 
     private static async Task<bool> SchemaIsReadyAsync(

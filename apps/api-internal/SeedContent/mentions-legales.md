@@ -1,6 +1,6 @@
 # Mentions légales
 
-**Dernière mise à jour : 07 juillet 2026**
+**Dernière mise à jour : 14 octobre 2026**
 
 Conformément aux dispositions applicables aux sites internet professionnels, les présentes mentions légales ont pour objet d’identifier l’éditeur du site et les conditions générales d’utilisation du site.
 
@@ -11,17 +11,18 @@ Conformément aux dispositions applicables aux sites internet professionnels, le
 Le présent site est édité par :
 
 **Zachary HOUNSA-HOUNKPA EI**
-Nom commercial : **Zachary IT**
-Entrepreneur individuel - Micro-entreprise
-SIREN : **105 111 520**
-SIRET : **105 111 520 00018**
-Code APE : **6202A - Conseil en systèmes et logiciels informatiques**
-Adresse professionnelle : **3 Kermaria, 35580 Guichen, France**
-Adresse e-mail : **[contact@zachary-it.fr](mailto:contact@zachary-it.fr)**
-Site internet : **zachary-it.fr**
 
-Le Prestataire est soumis au régime de la franchise en base de TVA.
-**TVA non applicable, art. 293 B du CGI.**
+- Nom commercial : **Zachary IT**
+- Entrepreneur individuel - Micro-entreprise
+- SIREN : **105 111 520**
+- SIRET : **105 111 520 00018**
+- Numéro de TVA intracommunautaire : **FR85105111520**
+- Code APE : **6202A - Conseil en systèmes et logiciels informatiques**
+- Adresse professionnelle : **3 Kermaria, 35580 Guichen, France**
+- Adresse e-mail : **[contact@zachary-it.fr](mailto:contact@zachary-it.fr)**
+- Site internet : **zachary-it.fr**
+
+Le Prestataire relève du régime réel normal de TVA depuis le **1er octobre 2026**, sur option. Son régime micro-BNC d'imposition des bénéfices demeure applicable.
 
 ---
 

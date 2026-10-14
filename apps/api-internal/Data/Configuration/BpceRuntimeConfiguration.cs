@@ -1,3 +1,5 @@
+using Kermaria.ApiInternal.Services;
+
 namespace Kermaria.ApiInternal.Data.Configuration;
 
 public enum BpceIntegrationMode
@@ -13,13 +15,18 @@ public sealed record BpceRuntimeConfiguration(
     string? RefreshToken,
     string? SenderId,
     int RequestTimeoutMs,
-    bool ConfigurationValid)
+    bool ConfigurationValid,
+    bool SellerVatNumberConfirmed = false,
+    bool SellerEiMentionConfirmed = false)
 {
     public string ModeName => Mode.ToString().ToLowerInvariant();
 
     public bool RequestsEnabled => Mode is BpceIntegrationMode.Live;
 
     public bool MockEnabled => Mode is BpceIntegrationMode.Mock;
+
+    public bool SellerInvoiceIdentityConfirmed =>
+        SellerVatNumberConfirmed && SellerEiMentionConfirmed;
 }
 
 public static class BpceConfigurationResolver
@@ -49,6 +56,18 @@ public static class BpceConfigurationResolver
             BpceIntegrationMode.Live => refreshToken is not null,
             _ => true
         };
+        var sellerVatNumberConfirmed = string.Equals(
+                configuration["BPCE_SELLER_VAT_NUMBER"]?.Trim(),
+                BillingVatPolicy.SellerVatNumber,
+                StringComparison.Ordinal)
+            && string.Equals(
+                configuration["BPCE_SELLER_VAT_NUMBER_CONFIRMED"]?.Trim(),
+                "true",
+                StringComparison.OrdinalIgnoreCase);
+        var sellerEiMentionConfirmed = string.Equals(
+            configuration["BPCE_SELLER_EI_MENTION_CONFIRMED"]?.Trim(),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
 
         return new BpceRuntimeConfiguration(
             mode,
@@ -56,7 +75,9 @@ public static class BpceConfigurationResolver
             refreshToken,
             senderId,
             requestTimeoutMs,
-            configurationValid);
+            configurationValid,
+            sellerVatNumberConfirmed,
+            sellerEiMentionConfirmed);
     }
 
     private static BpceIntegrationMode ParseMode(string? value)

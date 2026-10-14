@@ -11,7 +11,7 @@ import {
   resolvePresetTagline,
 } from "@/lib/billing-v2-formules";
 import { formatCurrencyFromCents } from "@/lib/formatters";
-import { getBillingV2FormulesCatalog, getClientSubscribePageLayout } from "@/lib/internal-api";
+import { getBillingV2FormulesCatalog, getClientSubscribePageLayout, getPublicManagedContent } from "@/lib/internal-api";
 
 export const metadata = {
   title: "Souscrire",
@@ -30,8 +30,9 @@ export const dynamic = "force-dynamic";
  */
 export default async function SubscribePage() {
   await requireClientSession();
-  const [catalogResult, layoutResult] = await Promise.all([
+  const [catalogResult, layoutResult, legalResult] = await Promise.all([
     getBillingV2FormulesCatalog(), getClientSubscribePageLayout(),
+    getPublicManagedContent("legal:cgv"),
   ]);
   const catalog = catalogResult.data;
   const presets = [...catalog.presets].sort(
@@ -78,7 +79,7 @@ export default async function SubscribePage() {
                   </p>
                   <p className="subscribe-preset-price">
                     <strong>{formatCurrencyFromCents(monthlyCents)}</strong>
-                    {" / mois"}
+                    {" TTC / mois"}
                   </p>
                   <ul className="subscribe-preset-benefits">
                     {benefits.map((benefit) => (
@@ -104,7 +105,7 @@ export default async function SubscribePage() {
           Ajoutez un service isolé, sans offre ni engagement. Le tarif
           s&apos;actualise à chaque changement.
         </p>
-        <BillingV2DirectSubscribe catalog={catalog} />
+        <BillingV2DirectSubscribe catalog={catalog} cgvVersionLabel={legalResult.data?.versionLabel ?? null} />
       </section>,
     subscribe_help: <section className="content-panel subscribe-help">
       <h2>Besoin d’aide pour choisir ?</h2>

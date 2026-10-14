@@ -4,6 +4,10 @@ public static class FiscalRegimes
 {
     public const string FranchiseBase = "franchise_base";
     public const string Standard = "standard";
+    public const string ReverseCharge = BillingVatPolicy.ReverseCharge;
+    public const string Exempt = BillingVatPolicy.Exempt;
+    public const string OutsideScope = BillingVatPolicy.OutsideScope;
+    public const string ReviewRequired = BillingVatPolicy.ReviewRequired;
 }
 
 public sealed record FiscalPolicySnapshot(
@@ -84,6 +88,12 @@ public interface IFiscalPolicy
     /// </summary>
     FiscalPolicySnapshot Resolve(int? taxRateBasisPoints, DateTime asOfUtc);
 
+    FiscalPolicySnapshot Resolve(
+        string? taxTreatment,
+        int? taxRateBasisPoints,
+        DateTime asOfUtc,
+        string? mentionSnapshot = null);
+
     int CalculateTaxAmount(int amountCents, int? taxRateBasisPoints);
 
     int AmountIncludingTax(int amountCents, int? taxRateBasisPoints);
@@ -100,19 +110,27 @@ public sealed class FiscalPolicy : IFiscalPolicy
         => regime == FiscalRegimes.Standard ? StandardMention : FranchiseBaseMention;
 
     public FiscalPolicySnapshot Resolve(int? taxRateBasisPoints)
-        => taxRateBasisPoints is null or <= 0
-            ? new FiscalPolicySnapshot(
-                FiscalRegimes.FranchiseBase,
-                null,
-                FranchiseBaseMention)
-            : new FiscalPolicySnapshot(
-                FiscalRegimes.Standard,
-                taxRateBasisPoints,
-                StandardMention);
+        => Resolve(taxRateBasisPoints, DateTime.UtcNow);
 
     public FiscalPolicySnapshot Resolve(int? taxRateBasisPoints, DateTime asOfUtc)
     {
-        var snapshot = Resolve(taxRateBasisPoints);
+        var civilDate = BillingV2BillingCalendar.CivilDate(asOfUtc);
+        var regime = taxRateBasisPoints switch
+        {
+            > 0 => FiscalRegimes.Standard,
+            _ when civilDate < BillingVatPolicy.EffectiveDate =>
+                FiscalRegimes.FranchiseBase,
+            _ => FiscalRegimes.ReviewRequired
+        };
+        var snapshot = new FiscalPolicySnapshot(
+            regime,
+            taxRateBasisPoints is > 0 ? taxRateBasisPoints : null,
+            regime switch
+            {
+                FiscalRegimes.Standard => StandardMention,
+                FiscalRegimes.FranchiseBase => FranchiseBaseMention,
+                _ => BillingVatPolicy.Mention(BillingVatPolicy.ReviewRequired)
+            });
         var administered = FiscalMentionDirectory.Current.Resolve(
             snapshot.FiscalRegime,
             asOfUtc);
@@ -121,9 +139,45 @@ public sealed class FiscalPolicy : IFiscalPolicy
             : snapshot with { FiscalMention = administered };
     }
 
+    public FiscalPolicySnapshot Resolve(
+        string? taxTreatment,
+        int? taxRateBasisPoints,
+        DateTime asOfUtc,
+        string? mentionSnapshot = null)
+    {
+        if (string.IsNullOrWhiteSpace(taxTreatment))
+        {
+            var legacy = Resolve(taxRateBasisPoints, asOfUtc);
+            return string.IsNullOrWhiteSpace(mentionSnapshot)
+                ? legacy
+                : legacy with { FiscalMention = mentionSnapshot };
+        }
+
+        var regime = taxTreatment switch
+        {
+            BillingVatPolicy.FrenchStandard => FiscalRegimes.Standard,
+            BillingVatPolicy.HistoricalFranchise => FiscalRegimes.FranchiseBase,
+            BillingVatPolicy.ReverseCharge => FiscalRegimes.ReverseCharge,
+            BillingVatPolicy.Exempt => FiscalRegimes.Exempt,
+            BillingVatPolicy.OutsideScope => FiscalRegimes.OutsideScope,
+            _ => FiscalRegimes.ReviewRequired
+        };
+        var mention = string.IsNullOrWhiteSpace(mentionSnapshot)
+            ? BillingVatPolicy.Mention(taxTreatment)
+            : mentionSnapshot;
+        return new FiscalPolicySnapshot(
+            regime,
+            regime == FiscalRegimes.Standard ? taxRateBasisPoints : null,
+            mention);
+    }
+
     public int CalculateTaxAmount(int amountCents, int? taxRateBasisPoints)
     {
         var policy = Resolve(taxRateBasisPoints);
+        if (policy.FiscalRegime == FiscalRegimes.ReviewRequired)
+        {
+            throw new InvalidOperationException("VAT_TREATMENT_REVIEW_REQUIRED");
+        }
         if (policy.FiscalRegime == FiscalRegimes.FranchiseBase)
         {
             return 0;

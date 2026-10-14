@@ -129,10 +129,9 @@ export function localBusinessJsonLd(baseUrl: string) {
     // profil qui n'existe pas : un `sameAs` mort est pire que pas de
     // `sameAs`.
     sameAs: [PORTFOLIO_URL],
-    // SIRET (14 chiffres, sans espaces), confirme par l'editeur et deja
-    // publie dans les mentions legales. `taxID` et non `vatID` : l'EI est
-    // en franchise en base, il n'y a pas de numero de TVA a declarer.
+    // Le SIRET et le numero de TVA correspondent aux mentions legales publiees.
     taxID: "10511152000018",
+    vatID: "FR85105111520",
   };
 }
 

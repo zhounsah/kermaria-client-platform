@@ -9,7 +9,8 @@ public enum StripeMode
 
 public sealed record StripeRuntimeConfiguration(
     StripeMode Mode,
-    string? SecretKey = null)
+    string? SecretKey = null,
+    string? FrenchInclusiveVatTaxRateId = null)
 {
     public string ModeName => Mode.ToString().ToLowerInvariant();
 
@@ -21,6 +22,10 @@ public sealed record StripeRuntimeConfiguration(
         => Enabled
             && !string.IsNullOrWhiteSpace(SecretKey)
             && SecretKeyMatchesMode(SecretKey);
+
+    public bool HasFrenchInclusiveVatTaxRate
+        => FrenchInclusiveVatTaxRateId is { Length: > 4 } id
+            && id.StartsWith("txr_", StringComparison.Ordinal);
 
     public bool SecretKeyMatchesMode(string? secretKey)
     {
@@ -56,6 +61,7 @@ public static class StripeConfigurationResolver
         };
         return new StripeRuntimeConfiguration(
             mode,
-            configuration["STRIPE_SECRET_KEY"]?.Trim());
+            configuration["STRIPE_SECRET_KEY"]?.Trim(),
+            configuration["STRIPE_FR_VAT20_INCLUSIVE_TAX_RATE_ID"]?.Trim());
     }
 }

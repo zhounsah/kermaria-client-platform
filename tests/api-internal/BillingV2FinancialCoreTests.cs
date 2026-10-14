@@ -148,9 +148,9 @@ public static class BillingV2FinancialCoreTests
         var draft = Event(
             gross: 2000,
             discount: 200,
-            net: 1800,
+            net: 1440,
             tax: 360,
-            total: 2160,
+            total: 1800,
             lines:
             [
                 Line(0, unit: 1200, quantity: 1, discount: 120, tax: 216),
@@ -198,7 +198,7 @@ public static class BillingV2FinancialCoreTests
             discount: 0,
             net: 1000,
             tax: 200,
-            total: 1100,
+            total: 1000,
             lines: [Line(0, unit: 1000, quantity: 1, discount: 0, tax: 200)]);
 
         var decision = BillingV2BillingEventPolicy.ValidateForFinalization(draft);
@@ -847,7 +847,8 @@ public static class BillingV2FinancialCoreTests
         long tax)
     {
         var gross = unit * quantity;
-        var net = gross - discount;
+        var total = gross - discount;
+        var net = total - tax;
         return new BillingV2BillingEventLineDraft(
             displayOrder,
             $"SERVICE-{displayOrder}",
@@ -859,7 +860,7 @@ public static class BillingV2FinancialCoreTests
             discount,
             net,
             tax,
-            net + tax,
+            total,
             "EUR");
     }
 

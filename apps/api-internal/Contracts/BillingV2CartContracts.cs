@@ -54,6 +54,7 @@ public sealed record BillingV2CartCheckoutPayload(
     int? ExpectedCartVersion,
     int? AcceptedQuoteVersion,
     string? AcceptedCompositionFingerprint,
+    string? AcceptedCgvVersionId,
     // Générées par le BFF depuis son origine publique : elles ne sont jamais
     // des champs du contrat navigateur Cart.
     string? SuccessUrl = null,

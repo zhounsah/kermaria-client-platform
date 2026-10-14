@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Kermaria.ApiInternal.Contracts;
+using Kermaria.ApiInternal.Data.Configuration;
 using Kermaria.ApiInternal.Data.Repositories;
 using Kermaria.ApiInternal.Infrastructure;
 using Kermaria.ApiInternal.Services.Bpce;
@@ -47,6 +48,7 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
     private readonly IBpceInvoicingService _bpce;
     private readonly IBpceInvoicingRepository _bpceRepository;
     private readonly IEmailDispatchService _emailDispatch;
+    private readonly BpceRuntimeConfiguration _bpceConfiguration;
     private readonly ILogger<InvoiceIssuingService> _logger;
 
     public InvoiceIssuingService(
@@ -54,12 +56,14 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
         IBpceInvoicingService bpce,
         IBpceInvoicingRepository bpceRepository,
         IEmailDispatchService emailDispatch,
+        BpceRuntimeConfiguration bpceConfiguration,
         ILogger<InvoiceIssuingService> logger)
     {
         _commercialRepository = commercialRepository;
         _bpce = bpce;
         _bpceRepository = bpceRepository;
         _emailDispatch = emailDispatch;
+        _bpceConfiguration = bpceConfiguration;
         _logger = logger;
     }
 
@@ -105,6 +109,34 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
                 false,
                 "DOCUMENT_EMPTY",
                 "The document has no billable amount.");
+        }
+
+        if (BillingV2BillingCalendar.CivilDate(DateTime.UtcNow)
+                >= BillingVatPolicy.EffectiveDate
+            && doc.Lines.Any(line => string.IsNullOrWhiteSpace(line.TaxTreatment)
+                || line.FiscalRegime == FiscalRegimes.ReviewRequired))
+        {
+            return new IssueInvoiceResult(
+                false,
+                "INVOICE_VAT_CLASSIFICATION_REQUIRED",
+                "Chaque ligne doit être qualifiée fiscalement avant émission BPCE.");
+        }
+        if (doc.Lines.Any(line => line.TaxTreatment is
+                BillingVatPolicy.ReverseCharge or BillingVatPolicy.Exempt
+                or BillingVatPolicy.OutsideScope))
+        {
+            return new IssueInvoiceResult(
+                false,
+                "INVOICE_SPECIAL_TAX_REVIEW_REQUIRED",
+                "L'autoliquidation, l'exonération et le hors champ exigent une revue des justificatifs avant émission.");
+        }
+        if (_bpceConfiguration.Mode is BpceIntegrationMode.Live
+            && !_bpceConfiguration.SellerInvoiceIdentityConfirmed)
+        {
+            return new IssueInvoiceResult(
+                false,
+                "INVOICE_BPCE_SELLER_IDENTITY_UNVERIFIED",
+                "Le numéro de TVA et la mention EI du vendeur doivent être vérifiés sur le PDF BPCE avant émission réelle.");
         }
 
         var customerResult = await _bpce.UpsertCustomerAsync(
@@ -292,13 +324,8 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
                 false, markResult.Code, markResult.Message);
         }
 
-        await _bpceRepository.UpdateInvoiceValidatedAsync(
-            documentId,
-            record.FiscalNumber,
-            "paid",
-            null,
-            record.PdfHash,
-            cancellationToken);
+        await _bpceRepository.MarkInvoicePaidAsync(
+            documentId, cancellationToken);
 
         await _commercialRepository.MarkDocumentPaidAsync(
             documentId, correlationId, paymentMethod, cancellationToken);
@@ -388,6 +415,15 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
 
         var pdfHash = Convert.ToHexString(
             SHA256.HashData(fetched.Value)).ToLowerInvariant();
+        if (record.PdfHash is { Length: > 0 } recordedHash
+            && !string.Equals(recordedHash, pdfHash,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogError(
+                "BPCE PDF hash mismatch for document {DocumentId}; cached fiscal evidence is unchanged",
+                documentId);
+            return null;
+        }
         await _bpceRepository.UpdateInvoiceValidatedAsync(
             documentId,
             record.FiscalNumber,

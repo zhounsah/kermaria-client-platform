@@ -120,9 +120,10 @@ public sealed class MockCommercialStore
     }
 
     private static int CalculateTaxAmount(MockCommercialDocumentLine line)
-        => FiscalPolicy.CalculateTaxAmount(
-            line.LineTotalCents,
-            line.TaxRateBasisPoints);
+        => line.TaxRateBasisPoints is > 0
+            ? FiscalPolicy.CalculateTaxAmount(
+                line.LineTotalCents, line.TaxRateBasisPoints)
+            : 0;
 
 }
 
@@ -335,6 +336,7 @@ public sealed class MockCommercialDocumentRepository : ICommercialDocumentReposi
                 || current.UnitLabel != resolved.UnitLabel
                 || current.UnitPriceCents != resolved.UnitPriceCents
                 || current.TaxRateBasisPoints != resolved.TaxRateBasisPoints
+                || current.TaxTreatment != resolved.TaxTreatment
                 || current.SortOrder != resolved.SortOrder
                 || current.LineTotalCents != resolved.LineTotalCents;
             current.Label = resolved.Label;
@@ -343,6 +345,7 @@ public sealed class MockCommercialDocumentRepository : ICommercialDocumentReposi
             current.UnitLabel = resolved.UnitLabel;
             current.UnitPriceCents = resolved.UnitPriceCents;
             current.TaxRateBasisPoints = resolved.TaxRateBasisPoints;
+            current.TaxTreatment = resolved.TaxTreatment;
             current.LineTotalCents = resolved.LineTotalCents;
             current.SortOrder = resolved.SortOrder;
             current.UpdatedAt = resolved.UpdatedAt;
@@ -615,7 +618,8 @@ public sealed class MockCommercialDocumentRepository : ICommercialDocumentReposi
             lineTotalCents,
             line.SortOrder,
             now,
-            now);
+            now,
+            line.TaxTreatment);
     }
 
     private void RecalculateTotals(MockCommercialDocument document)
@@ -628,9 +632,10 @@ public sealed class MockCommercialDocumentRepository : ICommercialDocumentReposi
     }
 
     private static int CalculateTaxAmount(MockCommercialDocumentLine line)
-        => FiscalPolicy.CalculateTaxAmount(
-            line.LineTotalCents,
-            line.TaxRateBasisPoints);
+        => line.TaxRateBasisPoints is > 0
+            ? FiscalPolicy.CalculateTaxAmount(
+                line.LineTotalCents, line.TaxRateBasisPoints)
+            : 0;
 
     private static void EnsureKnownCustomer(string? customerReference)
     {
@@ -759,6 +764,7 @@ public sealed class MockCommercialDocumentRepository : ICommercialDocumentReposi
     private static CommercialDocumentLine ToLine(MockCommercialDocumentLine line)
     {
         var fiscal = FiscalPolicy.Resolve(
+            line.TaxTreatment,
             line.TaxRateBasisPoints,
             DateTime.TryParse(
                 line.CreatedAt,
@@ -781,7 +787,8 @@ public sealed class MockCommercialDocumentRepository : ICommercialDocumentReposi
             line.LineTotalCents,
             line.SortOrder,
             line.CreatedAt,
-            line.UpdatedAt);
+            line.UpdatedAt,
+            line.TaxTreatment);
     }
 
     private static string CreateReference()
@@ -841,7 +848,8 @@ public sealed record MockCommercialDocumentLine(
     int InitialLineTotalCents,
     int InitialSortOrder,
     string CreatedAt,
-    string InitialUpdatedAt)
+    string InitialUpdatedAt,
+    string? InitialTaxTreatment = null)
 {
     public string Label { get; set; } = InitialLabel;
     public string Description { get; set; } = InitialDescription;
@@ -849,6 +857,7 @@ public sealed record MockCommercialDocumentLine(
     public string UnitLabel { get; set; } = InitialUnitLabel;
     public int UnitPriceCents { get; set; } = InitialUnitPriceCents;
     public int? TaxRateBasisPoints { get; set; } = InitialTaxRateBasisPoints;
+    public string? TaxTreatment { get; set; } = InitialTaxTreatment;
     public int LineTotalCents { get; set; } = InitialLineTotalCents;
     public int SortOrder { get; set; } = InitialSortOrder;
     public string UpdatedAt { get; set; } = InitialUpdatedAt;
