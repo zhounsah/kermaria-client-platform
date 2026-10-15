@@ -153,7 +153,8 @@ public static class BillingV2PrivateVatTestPolicy
             || !string.Equals(request.Mode,
                 BillingV2StripeModes.Subscription, StringComparison.Ordinal)
             || request.ExpectedAmountCents != TotalCents
-            || request.Currency != "EUR"
+            || !string.Equals(request.Currency, "EUR",
+                StringComparison.OrdinalIgnoreCase)
             || request.Lines.Count != 1
             || !request.Lines[0].Recurring
             || request.Lines[0].UnitAmountCents != TotalCents

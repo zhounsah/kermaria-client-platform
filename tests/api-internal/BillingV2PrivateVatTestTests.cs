@@ -130,6 +130,26 @@ public static class BillingV2PrivateVatTestTests
         Require(BillingV2PrivateVatTestPolicy.CheckGateway(
             runtime, stripe, gatewayRequest, now).Authorized,
             "La frontière Stripe doit accepter seulement le montant et le taux exacts.");
+        // Reproduit le vrai chemin outbox -> fabrique -> garde. La fabrique
+        // convertit EUR en eur pour Stripe ; le garde doit admettre les deux
+        // casses sans relâcher la restriction à la devise euro.
+        var fromFactory = PrivateGatewayRequestFromEvent(
+            eventSnapshot, runtime);
+        Require(fromFactory.Currency == "eur"
+            && BillingV2PrivateVatTestPolicy.CheckGateway(
+                runtime, stripe, fromFactory, now).Authorized
+            && BillingV2StripeCheckoutRequestFactory.ToFormParameters(
+                fromFactory)["line_items[0][price_data][currency]"] == "eur",
+            "La requête de la véritable fabrique doit passer le garde sans modifier la devise Stripe.");
+        var otherCurrency = PrivateGatewayRequestFromEvent(
+            eventSnapshot with { Currency = "USD" }, runtime);
+        var otherCurrencyDecision = BillingV2PrivateVatTestPolicy.CheckGateway(
+            runtime, stripe, otherCurrency, now);
+        Require(otherCurrency.Currency == "usd"
+            && !otherCurrencyDecision.Authorized
+            && otherCurrencyDecision.ReasonCode ==
+                "PRIVATE_VAT_TEST_GATEWAY_SCOPE_MISMATCH",
+            "Une autre devise issue de la fabrique doit rester refusée.");
         var form = BillingV2StripeCheckoutRequestFactory.ToFormParameters(
             gatewayRequest);
         Require(form["expires_at"] == new DateTimeOffset(
@@ -182,6 +202,16 @@ public static class BillingV2PrivateVatTestTests
             runtime, stripe, evidence,
             document with { TotalAmountCents = 591 }).Authorized,
             "Le document BPCE ne doit pas diverger de Stripe.");
+        var laterWindow = runtime with
+        {
+            PrivateVatTestStartsAtUtc = now.AddHours(3),
+            PrivateVatTestExpiresAtUtc = now.AddHours(4)
+        };
+        Require(BillingV2PrivateVatTestPolicy.CheckConfiguration(
+                laterWindow, stripe, now.AddHours(3)).Authorized
+            && !BillingV2PrivateVatTestPolicy.CheckSettledInvoice(
+                laterWindow, stripe, evidence, document).Authorized,
+            "Une nouvelle fenêtre ne doit pas faire passer une ancienne facture pour une opération de la nouvelle recette.");
 
         var sql = new SqlRuntimeConfiguration(
             PortalPersistenceMode.MariaDb, "mariadb", "test", "test", true);
@@ -253,6 +283,28 @@ public static class BillingV2PrivateVatTestTests
                 ["private_vat_test_user_id"] = UserId
             }, "attempt-key", null, BillingV2PrivateVatTestPolicy.LiveTaxRateId,
             PilotId, runtime.PrivateVatTestExpiresAtUtc);
+
+    private static BillingV2StripeCheckoutRequest PrivateGatewayRequestFromEvent(
+        BillingV2FinalizedBillingEvent billingEvent,
+        BillingV2RuntimeConfiguration runtime)
+    {
+        var request = BillingV2StripeCheckoutRequestFactory.Build(
+            billingEvent, "attempt", "attempt-key", "test@example.invalid",
+            "https://example.invalid/success",
+            "https://example.invalid/cancel",
+            inclusiveTaxRateId: BillingV2PrivateVatTestPolicy.LiveTaxRateId);
+        var metadata = request.Metadata.ToDictionary(
+            pair => pair.Key, pair => pair.Value,
+            StringComparer.Ordinal);
+        metadata["private_vat_test_id"] = PilotId;
+        metadata["private_vat_test_user_id"] = UserId;
+        return request with
+        {
+            Metadata = metadata,
+            PrivateVatTestId = PilotId,
+            ExpiresAtUtc = runtime.PrivateVatTestExpiresAtUtc
+        };
+    }
 
     private static BillingV2PrivateVatInvoiceEvidence InvoiceEvidence(
         DateTime now, string idempotencyKey)
