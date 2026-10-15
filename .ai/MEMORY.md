@@ -12,6 +12,17 @@
 
 ## État courant / informations récentes
 
+### Recette TVA privée (préparation locale du 2026-10-14)
+
+- Depuis la base immuable `v2.1.1` / `5ce2898`, le correctif
+  `v2.1.1-hotfix.1` ajoute une seule fenêtre de Checkout Stripe Live à
+  5,90 € TTC pour un compte de test authentifié, avec drapeaux publics API et
+  Web fermés. Le webhook et le rapprochement restent actifs une fois la
+  fenêtre expirée ; l'exception BPCE du premier PDF exige une preuve réglée
+  et le profil émetteur exact. La publication technique ne vaut pas
+  activation du paiement ; revalider l'état de production avant toute
+  recette. Voir `docs/releases/V2.1.1_HOTFIX_1_PRIVATE_VAT_TEST.md`.
+
 ### Version
 
 - **Production : v2.1.0** déployée le 2026-10-07 depuis le tag immuable

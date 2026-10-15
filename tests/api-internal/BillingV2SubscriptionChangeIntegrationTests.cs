@@ -179,7 +179,7 @@ public static class BillingV2SubscriptionChangeIntegrationTests
         await Exec(db,"UPDATE billing_v2_outbox_events SET available_at=UTC_TIMESTAMP(6) WHERE aggregate_id=@id AND event_type='billing_v2.stripe.recurring_mutation_requested'",("@id",change.ChangeId));
         Equal(1,await dispatcher.DispatchPendingAsync(CancellationToken.None),"S Stripe dispatch"); Equal(ids.AmountS,stripe.AmountCents,"Stripe refetch confirmed S"); Equal(1,stripe.Quantity,"S Stripe quantity"); Equal(1,stripe.MutationEffectiveCount,"one S Stripe mutation");
 
-        var rail = new BillingV2StripeRailService(sql,new StripeRuntimeConfiguration(StripeMode.Test),stripe,new FixedBillingV2Clock(lateWorker),NullLogger<BillingV2StripeRailService>.Instance);
+        var rail = new BillingV2StripeRailService(sql,new BillingV2RuntimeConfiguration(false,false,false,false,false,false),new StripeRuntimeConfiguration(StripeMode.Test),stripe,new FixedBillingV2Clock(lateWorker),NullLogger<BillingV2StripeRailService>.Instance);
         var renewals = new BillingV2RenewalService(sql,new FixedBillingV2Clock(lateWorker),stripe,rail,NullLogger<BillingV2RenewalService>.Instance);
         var renewal = await renewals.EnsureRenewalChargeAsync(subscription,3,CancellationToken.None);
         if(!renewal.Created) throw new InvalidOperationException(renewal.ReasonCode);

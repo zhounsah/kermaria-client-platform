@@ -6,6 +6,7 @@ using Kermaria.ApiInternal.Infrastructure;
 using Kermaria.ApiInternal.Services.Bpce;
 using Kermaria.ApiInternal.Services.Email;
 using Kermaria.ApiInternal.Services.Provisioning;
+using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Services;
 
@@ -49,6 +50,9 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
     private readonly IBpceInvoicingRepository _bpceRepository;
     private readonly IEmailDispatchService _emailDispatch;
     private readonly BpceRuntimeConfiguration _bpceConfiguration;
+    private readonly BillingV2RuntimeConfiguration _billingRuntime;
+    private readonly StripeRuntimeConfiguration _stripeConfiguration;
+    private readonly SqlRuntimeConfiguration _sqlConfiguration;
     private readonly ILogger<InvoiceIssuingService> _logger;
 
     public InvoiceIssuingService(
@@ -57,6 +61,9 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
         IBpceInvoicingRepository bpceRepository,
         IEmailDispatchService emailDispatch,
         BpceRuntimeConfiguration bpceConfiguration,
+        BillingV2RuntimeConfiguration billingRuntime,
+        StripeRuntimeConfiguration stripeConfiguration,
+        SqlRuntimeConfiguration sqlConfiguration,
         ILogger<InvoiceIssuingService> logger)
     {
         _commercialRepository = commercialRepository;
@@ -64,6 +71,9 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
         _bpceRepository = bpceRepository;
         _emailDispatch = emailDispatch;
         _bpceConfiguration = bpceConfiguration;
+        _billingRuntime = billingRuntime;
+        _stripeConfiguration = stripeConfiguration;
+        _sqlConfiguration = sqlConfiguration;
         _logger = logger;
     }
 
@@ -133,10 +143,35 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
         if (_bpceConfiguration.Mode is BpceIntegrationMode.Live
             && !_bpceConfiguration.SellerInvoiceIdentityConfirmed)
         {
-            return new IssueInvoiceResult(
-                false,
-                "INVOICE_BPCE_SELLER_IDENTITY_UNVERIFIED",
-                "Le numéro de TVA et la mention EI du vendeur doivent être vérifiés sur le PDF BPCE avant émission réelle.");
+            var privateEvidence = await ReadPrivateVatInvoiceEvidenceAsync(
+                documentId, cancellationToken);
+            var privateDecision = privateEvidence is null
+                ? new BillingV2PrivateVatTestDecision(false,
+                    "PRIVATE_VAT_TEST_INVOICE_NOT_LINKED", null, null)
+                : BillingV2PrivateVatTestPolicy.CheckSettledInvoice(
+                    _billingRuntime, _stripeConfiguration, privateEvidence,
+                    doc);
+            if (!_bpceConfiguration.SellerVatNumberConfirmed
+                || _bpceConfiguration.SellerEiMentionConfirmed
+                || _bpceConfiguration.SenderId != "774259"
+                || !privateDecision.Authorized)
+            {
+                return new IssueInvoiceResult(
+                    false,
+                    "INVOICE_BPCE_SELLER_IDENTITY_UNVERIFIED",
+                    "Le document ne relève pas de la recette TVA privée autorisée.");
+            }
+            var sender = await _bpce.GetSenderAsync(
+                _bpceConfiguration.SenderId, cancellationToken);
+            if (sender.StatusCode >= 400
+                || sender.Value is not { Name: "Zachary HOUNSA-HOUNKPA EI",
+                    Siren: "105111520", Country: "FR", IsArchived: false })
+            {
+                return new IssueInvoiceResult(
+                    false,
+                    "INVOICE_BPCE_PRIVATE_TEST_SENDER_UNVERIFIED",
+                    "Le profil émetteur BPCE ne correspond pas à l'identité fiscale attendue.");
+            }
         }
 
         var customerResult = await _bpce.UpsertCustomerAsync(
@@ -439,6 +474,61 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
         string documentId,
         CancellationToken cancellationToken)
         => _bpceRepository.GetInvoiceRecordAsync(documentId, cancellationToken);
+
+    private async Task<BillingV2PrivateVatInvoiceEvidence?>
+        ReadPrivateVatInvoiceEvidenceAsync(
+            string documentId,
+            CancellationToken cancellationToken)
+    {
+        if (!_sqlConfiguration.IsPersistent
+            || string.IsNullOrWhiteSpace(_sqlConfiguration.ConnectionString))
+            return null;
+
+        await using var connection = new MySqlConnection(
+            _sqlConfiguration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT request_row.actor_reference,
+                   request_row.customer_id,
+                   request_row.idempotency_key,
+                   request_row.selection_fingerprint,
+                   event_row.total_amount_cents,
+                   event_row.tax_amount_cents,
+                   event_row.settlement_status,
+                   event_row.created_at
+            FROM billing_v2_subscription_documents document_link
+            INNER JOIN billing_v2_authoritative_checkout_requests request_row
+                ON request_row.subscription_id = document_link.subscription_id
+               AND request_row.billing_event_id = document_link.billing_event_id
+            INNER JOIN billing_v2_billing_events event_row
+                ON event_row.id = document_link.billing_event_id
+            WHERE document_link.commercial_document_id = @document_id
+              AND document_link.document_kind = 'initial_subscription_invoice'
+              AND request_row.provider = 'stripe'
+              AND request_row.environment = 'live'
+              AND event_row.financial_status = 'finalized'
+            LIMIT 2;
+            """;
+        command.Parameters.AddWithValue("@document_id", documentId);
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)
+            || reader.IsDBNull(reader.GetOrdinal("actor_reference")))
+            return null;
+        var evidence = new BillingV2PrivateVatInvoiceEvidence(
+            reader.GetString("actor_reference"),
+            MariaDbIdentifierReader.ReadRequired(reader, "customer_id"),
+            reader.GetString("idempotency_key"),
+            reader.GetString("selection_fingerprint"),
+            reader.GetInt64("total_amount_cents"),
+            reader.GetInt64("tax_amount_cents"),
+            reader.GetString("settlement_status"),
+            DateTime.SpecifyKind(reader.GetDateTime("created_at"),
+                DateTimeKind.Utc));
+        return await reader.ReadAsync(cancellationToken) ? null : evidence;
+    }
 
     private static BpceIssuedInvoiceInfo MapRecord(BpceInvoiceRecord record)
         => new(

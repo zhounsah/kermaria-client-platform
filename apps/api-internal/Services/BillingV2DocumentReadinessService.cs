@@ -6,7 +6,8 @@ namespace Kermaria.ApiInternal.Services;
 public interface IBillingV2DocumentReadinessService
 {
     Task<BillingV2DocumentReadinessStatus> CheckAsync(
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        bool privateVatTestAuthorized = false);
 }
 
 public sealed class NoOpBillingV2DocumentReadinessService
@@ -20,7 +21,8 @@ public sealed class NoOpBillingV2DocumentReadinessService
     }
 
     public Task<BillingV2DocumentReadinessStatus> CheckAsync(
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool privateVatTestAuthorized = false)
         => Task.FromResult(BillingV2DocumentReadinessStatus.NotReady);
 }
 
@@ -51,7 +53,8 @@ public sealed class BillingV2DocumentReadinessService
     }
 
     public async Task<BillingV2DocumentReadinessStatus> CheckAsync(
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool privateVatTestAuthorized = false)
     {
         if (!_sql.IsPersistent || string.IsNullOrWhiteSpace(_sql.ConnectionString))
         {
@@ -68,10 +71,14 @@ public sealed class BillingV2DocumentReadinessService
         if (_bpce.Mode is BpceIntegrationMode.Live
             && !_bpce.SellerInvoiceIdentityConfirmed)
         {
-            return new BillingV2DocumentReadinessStatus(
-                false,
-                "BILLING_V2_BPCE_SELLER_IDENTITY_UNVERIFIED",
-                "Le numéro de TVA et la mention EI du vendeur doivent être vérifiés sur un PDF BPCE réel avant tout nouveau Checkout taxable.");
+            if (!privateVatTestAuthorized || !_bpce.SellerVatNumberConfirmed
+                || _bpce.SellerEiMentionConfirmed)
+            {
+                return new BillingV2DocumentReadinessStatus(
+                    false,
+                    "BILLING_V2_BPCE_SELLER_IDENTITY_UNVERIFIED",
+                    "Le numéro de TVA et la mention EI du vendeur doivent être vérifiés sur un PDF BPCE réel avant tout nouveau Checkout taxable.");
+            }
         }
 
         try

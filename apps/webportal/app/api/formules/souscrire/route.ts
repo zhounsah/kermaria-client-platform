@@ -7,6 +7,7 @@ import { rejectInvalidPortalCsrf } from "@/lib/portal-bff";
 import {
   getInternalApiError,
   getInternalSession,
+  getPrivateVatTestEligibility,
   mutateInternalPortalPayloadTyped,
 } from "@/lib/internal-api";
 import { getPortalPublicUrl } from "@/lib/public-routes";
@@ -49,14 +50,6 @@ export async function POST(request: NextRequest) {
       { code, message, correlation_id: correlationId },
       { status, headers: { [CORRELATION_HEADER]: correlationId } },
     );
-
-  if (!isBillingV2AuthoritativeCheckoutBffEnabled()) {
-    return fail(
-      "BILLING_V2_AUTHORITATIVE_CHECKOUT_FLAG_OFF",
-      "La souscription en ligne n'est pas encore ouverte.",
-      503,
-    );
-  }
 
   // Refuser une requete non authentifiee ou cross-site avant de parser le
   // payload commercial. La validation metier ne doit pas preceder le garde CSRF.
@@ -124,6 +117,22 @@ export async function POST(request: NextRequest) {
     }
   } catch {
     return fail("SESSION_INVALID", "Session invalide.", 401);
+  }
+
+  // Le BFF public reste fermé. Cette lecture liée à la session permet
+  // uniquement au compte de recette de poursuivre vers le garde API final.
+  if (!isBillingV2AuthoritativeCheckoutBffEnabled()) {
+    try {
+      const eligibility = await getPrivateVatTestEligibility(
+        sessionToken, correlationId);
+      if (!eligibility.eligible) {
+        return fail("BILLING_V2_AUTHORITATIVE_CHECKOUT_FLAG_OFF",
+          "La souscription en ligne n'est pas encore ouverte.", 503);
+      }
+    } catch {
+      return fail("BILLING_V2_AUTHORITATIVE_CHECKOUT_FLAG_OFF",
+        "La souscription en ligne n'est pas encore ouverte.", 503);
+    }
   }
 
   const portalUrl = getPortalPublicUrl(request);

@@ -4601,6 +4601,32 @@ app.MapPatch(
             context.RequestAborted);
         return PublicPackCatalogOk(context, service, result);
     });
+// Lecture liee a la session : elle n'ouvre aucun Checkout. Le catalogue
+// public reste fermé ; seule l'identité autorisée voit le bouton de recette.
+app.MapGet(
+    "/internal/portal/billing-v2/private-vat-test/eligibility",
+    async (
+        HttpContext context,
+        IAuthenticationService authenticationService,
+        IAuditService auditService,
+        BillingV2RuntimeConfiguration runtime,
+        StripeRuntimeConfiguration stripe) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context, authenticationService, auditService);
+        var decision = BillingV2PrivateVatTestPolicy.CheckActor(
+            runtime, stripe, session, DateTime.UtcNow);
+        return Results.Ok(new
+        {
+            eligible = decision.Authorized,
+            expectedTotalCents = decision.Authorized
+                ? BillingV2PrivateVatTestPolicy.TotalCents : 0,
+            expectedTaxCents = decision.Authorized
+                ? BillingV2PrivateVatTestPolicy.TaxCents : 0,
+            expiresAtUtc = decision.Authorized
+                ? decision.ExpiresAtUtc?.ToString("O") : null
+        });
+    });
 app.MapPost(
     "/internal/portal/billing-v2/subscriptions/checkout",
     async (

@@ -1,5 +1,6 @@
 using System.Data;
 using Kermaria.ApiInternal.Data.Configuration;
+using Kermaria.ApiInternal.Data.Repositories;
 using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Services;
@@ -71,6 +72,7 @@ public interface IBillingV2StripeRailService
 public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
 {
     private readonly SqlRuntimeConfiguration _sql;
+    private readonly BillingV2RuntimeConfiguration _runtime;
     private readonly StripeRuntimeConfiguration _stripe;
     private readonly IBillingV2StripeGateway _gateway;
     private readonly IBillingV2Clock _clock;
@@ -78,12 +80,14 @@ public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
 
     public BillingV2StripeRailService(
         SqlRuntimeConfiguration sql,
+        BillingV2RuntimeConfiguration runtime,
         StripeRuntimeConfiguration stripe,
         IBillingV2StripeGateway gateway,
         IBillingV2Clock clock,
         ILogger<BillingV2StripeRailService> logger)
     {
         _sql = sql;
+        _runtime = runtime;
         _stripe = stripe;
         _gateway = gateway;
         _clock = clock;
@@ -188,6 +192,29 @@ public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
             return Failed(reuse.ReasonCode, false);
         }
 
+        // Ne pas réexposer non plus l'URL d'une ancienne Session à un client
+        // hors allowlist. Les webhooks et la réconciliation restent séparés.
+        BillingV2PrivateVatTestDecision? privateTest = null;
+        string? privateActorId = null;
+        if (_runtime.PrivateVatTestEnabled || !_runtime.AuthoritativeCheckoutEnabled)
+        {
+            if (!_runtime.PrivateVatTestEnabled)
+                return Failed("BILLING_V2_AUTHORITATIVE_CHECKOUT_FLAG_OFF", false);
+            var provenance = await ReadPrivateCheckoutProvenanceAsync(
+                connection, subscriptionId, cancellationToken);
+            privateActorId = provenance?.ActorUserId;
+            privateTest = BillingV2PrivateVatTestPolicy.CheckDispatch(
+                _runtime, _stripe,
+                provenance?.ActorUserId,
+                provenance?.CustomerId,
+                provenance?.IdempotencyKey,
+                provenance?.SelectionFingerprint,
+                billingEvent!,
+                _clock.UtcNow);
+            if (!privateTest.Authorized)
+                return Failed(privateTest.ReasonCode, false);
+        }
+
         // Reprise apres interruption : si un identifiant de session a deja ete
         // persiste, on RELIT au lieu de recreer. Une seconde session voudrait
         // dire un second encaissement possible.
@@ -241,6 +268,20 @@ public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
             // Sans lui, rien ne change : `customer_email` reste utilise.
             attempt.ProviderCustomerReference,
             _stripe.FrenchInclusiveVatTaxRateId);
+        if (privateTest is not null)
+        {
+            var metadata = stripeRequest.Metadata.ToDictionary(
+                pair => pair.Key, pair => pair.Value,
+                StringComparer.Ordinal);
+            metadata["private_vat_test_id"] = _runtime.PrivateVatTestId!;
+            metadata["private_vat_test_user_id"] = privateActorId!;
+            stripeRequest = stripeRequest with
+            {
+                Metadata = metadata,
+                PrivateVatTestId = _runtime.PrivateVatTestId,
+                ExpiresAtUtc = privateTest.ExpiresAtUtc
+            };
+        }
         var created = await _gateway.CreateCheckoutSessionAsync(
             stripeRequest,
             cancellationToken);
@@ -1100,6 +1141,43 @@ public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
         string reasonCode,
         bool retryable)
         => new(false, reasonCode, null, null, retryable);
+
+    private sealed record PrivateCheckoutProvenance(
+        string ActorUserId,
+        string CustomerId,
+        string IdempotencyKey,
+        string SelectionFingerprint);
+
+    private static async Task<PrivateCheckoutProvenance?>
+        ReadPrivateCheckoutProvenanceAsync(
+            MySqlConnection connection,
+            string subscriptionId,
+            CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT actor_reference, customer_id, idempotency_key,
+                   selection_fingerprint
+            FROM billing_v2_authoritative_checkout_requests
+            WHERE subscription_id = @subscription_id
+              AND provider = 'stripe'
+              AND environment = 'live'
+            LIMIT 2;
+            """;
+        command.Parameters.AddWithValue("@subscription_id", subscriptionId);
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)
+            || reader.IsDBNull(reader.GetOrdinal("actor_reference")))
+            return null;
+        var result = new PrivateCheckoutProvenance(
+            reader.GetString("actor_reference"),
+            MariaDbIdentifierReader.ReadRequired(reader, "customer_id"),
+            reader.GetString("idempotency_key"),
+            reader.GetString("selection_fingerprint"));
+        return await reader.ReadAsync(cancellationToken) ? null : result;
+    }
 
     private static async Task<string?> ReadBillingEventIdAsync(
         MySqlConnection connection,

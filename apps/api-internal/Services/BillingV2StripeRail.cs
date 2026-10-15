@@ -428,7 +428,9 @@ public sealed record BillingV2StripeCheckoutRequest(
     /// reutiliser un identifiant persiste.
     /// </summary>
     string? ProviderCustomerId = null,
-    string? InclusiveTaxRateId = null);
+    string? InclusiveTaxRateId = null,
+    string? PrivateVatTestId = null,
+    DateTime? ExpiresAtUtc = null);
 
 public sealed record BillingV2FinalizedBillingEvent(
     string Id,
@@ -698,6 +700,14 @@ public static class BillingV2StripeCheckoutRequestFactory
             {
                 parameters[$"payment_intent_data[metadata][{key}]"] = value;
             }
+        }
+
+        if (request.PrivateVatTestId is { Length: > 0 }
+            && request.ExpiresAtUtc is { } expiresAtUtc)
+        {
+            parameters["expires_at"] = new DateTimeOffset(expiresAtUtc)
+                .ToUnixTimeSeconds().ToString(
+                    System.Globalization.CultureInfo.InvariantCulture);
         }
 
         return parameters;

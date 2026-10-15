@@ -289,6 +289,8 @@ public static class BillingV2HardeningSchemaTests
                 connectionString,
                 "test",
                 true),
+            new BillingV2RuntimeConfiguration(false, false, false, false,
+                false, false),
             new StripeRuntimeConfiguration(StripeMode.Test, "sk_test_fake"),
             gateway,
             SystemBillingV2Clock.Instance,

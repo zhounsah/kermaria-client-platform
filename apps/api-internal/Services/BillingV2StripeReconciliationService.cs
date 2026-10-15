@@ -28,6 +28,16 @@ public sealed record BillingV2ReconciliationRunResult(
         Examined - Settled - ReconciliationRequired - Failed);
 }
 
+public static class BillingV2ReconciliationGate
+{
+    public static bool CanProcess(
+        SqlRuntimeConfiguration sql,
+        StripeRuntimeConfiguration stripe)
+        => sql.IsPersistent
+            && !string.IsNullOrWhiteSpace(sql.ConnectionString)
+            && stripe.IsConfigured;
+}
+
 /// <summary>
 /// Charge encaissee dont le document reste a emettre.
 /// </summary>
@@ -105,9 +115,9 @@ public sealed class BillingV2StripeReconciliationService
     public async Task<BillingV2ReconciliationRunResult> ReconcilePendingAsync(
         CancellationToken cancellationToken)
     {
-        if (!_runtime.AuthoritativeCheckoutEnabled
-            || !_sql.IsPersistent
-            || string.IsNullOrWhiteSpace(_sql.ConnectionString))
+        // Un paiement lancé avant la fermeture du Checkout doit encore être
+        // rapproché. Seul le lancement de nouvelles sessions est fermé.
+        if (!BillingV2ReconciliationGate.CanProcess(_sql, _stripe))
         {
             return new BillingV2ReconciliationRunResult(
                 0, 0, 0, 0, "BILLING_V2_RECONCILIATION_GATE_CLOSED");

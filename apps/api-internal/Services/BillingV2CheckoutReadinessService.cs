@@ -3,7 +3,8 @@ namespace Kermaria.ApiInternal.Services;
 public sealed record BillingV2CheckoutReadinessRequest(
     IReadOnlyList<string> RequiredServicePriceIds,
     string Provider,
-    string Environment);
+    string Environment,
+    bool PrivateVatTestAuthorized = false);
 
 public sealed record BillingV2CheckoutReadinessDecision(
     bool Authorized,
@@ -106,12 +107,14 @@ public sealed class BillingV2CheckoutReadinessService
                 request.Environment,
                 cancellationToken);
         var documentReadiness = await _documentReadiness.CheckAsync(
-            cancellationToken);
+            cancellationToken,
+            request.PrivateVatTestAuthorized);
         var decision = BillingV2CheckoutReadinessGate.Evaluate(
             _configuration,
             launchReadiness,
             providerMappings,
-            documentReadiness);
+            documentReadiness,
+            request.PrivateVatTestAuthorized);
 
         if (!decision.Authorized)
         {
@@ -130,11 +133,21 @@ public static class BillingV2CheckoutReadinessGate
         BillingV2RuntimeConfiguration configuration,
         BillingV2LaunchReadinessSnapshot launchReadiness,
         BillingV2ProviderPriceMappingStatus providerMappings,
-        BillingV2DocumentReadinessStatus? documentReadiness = null)
+        BillingV2DocumentReadinessStatus? documentReadiness = null,
+        bool privateVatTestAuthorized = false)
     {
         documentReadiness ??= BillingV2DocumentReadinessStatus.NotReady;
+        var privateMode = configuration.PrivateVatTestEnabled && privateVatTestAuthorized;
 
-        if (!configuration.AuthoritativeCheckoutEnabled)
+        if (configuration.PrivateVatTestEnabled && !privateVatTestAuthorized)
+        {
+            return Blocked(
+                "PRIVATE_VAT_TEST_ACCOUNT_NOT_ALLOWED",
+                launchReadiness,
+                providerMappings,
+                documentReadiness);
+        }
+        if (!configuration.AuthoritativeCheckoutEnabled && !privateMode)
         {
             return Blocked(
                 "BILLING_V2_CHECKOUT_FLAG_OFF",
@@ -143,7 +156,7 @@ public static class BillingV2CheckoutReadinessGate
                 documentReadiness);
         }
 
-        if (!configuration.FirstRealSubscriptionApproved)
+        if (!configuration.FirstRealSubscriptionApproved && !privateMode)
         {
             return Blocked(
                 "BILLING_V2_FIRST_REAL_SUBSCRIPTION_NOT_APPROVED",

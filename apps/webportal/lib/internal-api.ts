@@ -39,6 +39,7 @@ import type {
   CustomerAdProvisioningMutationResponse,
   DiagnosticConfigurationAdminView,
   BillingV2ConfigurationOverview,
+  BillingV2PrivateVatTestEligibility,
   DemoContentTemplateAdminView,
   IntegrationsOverview,
   RuntimeOverview,
@@ -803,6 +804,17 @@ export async function getBillingV2CartCheckoutStatus(
   }
   if (!response.ok) throw await toInternalApiError(response, correlationId);
   return readInternalJson<BillingV2CartCheckoutStatusResponse>(response, correlationId);
+}
+
+export function getPrivateVatTestEligibility(
+  sessionToken: string,
+  correlationId: CorrelationId,
+): Promise<BillingV2PrivateVatTestEligibility> {
+  return getInternalPortalData<BillingV2PrivateVatTestEligibility>(
+    "/internal/portal/billing-v2/private-vat-test/eligibility",
+    sessionToken,
+    correlationId,
+  );
 }
 
 export function getPublicPackCatalogContent() {

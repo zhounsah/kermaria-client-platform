@@ -281,7 +281,9 @@ public sealed class BillingV2CartCheckoutService : IBillingV2CartCheckoutService
             record.OutboxStatus,
             record.ProviderCheckoutStatus,
             record.PaymentStatus,
-            !string.IsNullOrWhiteSpace(record.ApprovalUrl));
+            _runtime.AuthoritativeCheckoutEnabled
+                && !_runtime.PrivateVatTestEnabled
+                && !string.IsNullOrWhiteSpace(record.ApprovalUrl));
         return new(
             "CART_CHECKOUT_STATUS_FOUND",
             record.CartId,

@@ -168,18 +168,36 @@ public sealed class BillingV2AuthoritativeCheckoutService
         string correlationId,
         CancellationToken cancellationToken)
     {
+        var now = DateTime.UtcNow;
+        BillingV2PrivateVatTestDecision? privateTest = null;
+        if (_runtime.PrivateVatTestEnabled)
+        {
+            privateTest = BillingV2PrivateVatTestPolicy.CheckActor(
+                _runtime, _stripe, session, now);
+            if (!privateTest.Authorized)
+                throw new InvalidOperationException(privateTest.ReasonCode);
+            // Une seule cle serveur pour toute la fenêtre : deux clics, deux
+            // chemins ou deux requêtes concurrentes ne créent qu'une intention.
+            request = request with { IdempotencyKey = privateTest.IdempotencyKey! };
+        }
         var provider = NormalizeProvider(request.Provider);
+        if (_runtime.PrivateVatTestEnabled)
+        {
+            var shape = BillingV2PrivateVatTestPolicy.CheckRequestShape(
+                request, provider);
+            if (!shape.Authorized)
+                throw new InvalidOperationException(shape.ReasonCode);
+        }
         var environment = ResolveEnvironment(provider);
         var gate = BillingV2AuthoritativeCheckoutGate.Evaluate(
             _runtime,
             _sql.IsPersistent && !string.IsNullOrWhiteSpace(_sql.ConnectionString),
-            request.IdempotencyKey);
+            request.IdempotencyKey,
+            privateTest?.Authorized == true);
         if (!gate.Authorized)
         {
             throw new InvalidOperationException(gate.ReasonCode);
         }
-
-        var now = DateTime.UtcNow;
 
         await using var readConnection =
             new MySqlConnection(_sql.ConnectionString);
@@ -305,12 +323,17 @@ public sealed class BillingV2AuthoritativeCheckoutService
         //    client_request_id, il doit quand meme retomber sur l'intention
         //    existante au lieu d'en ouvrir une seconde.
         var existingIntent = await BillingV2FinancialCoreStore
-                .FindIntentByHashAsync(
-                    readConnection,
-                    transaction: null,
-                    intentHash,
-                    cancellationToken)
-            ?? await BillingV2FinancialCoreStore
+            .FindIntentByHashAsync(
+                readConnection,
+                transaction: null,
+                intentHash,
+                cancellationToken);
+        // La recette ne reprend que son intention a cle fixe. Une intention
+        // publique plus ancienne peut avoir la meme selection sans les memes
+        // controles de montant, d'acteur et de validite temporelle.
+        if (existingIntent is null && !_runtime.PrivateVatTestEnabled)
+        {
+            existingIntent = await BillingV2FinancialCoreStore
                 .FindOpenIntentForSelectionAsync(
                     readConnection,
                     transaction: null,
@@ -320,6 +343,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
                     environment,
                     now,
                     cancellationToken);
+        }
         if (existingIntent is not null)
         {
             return await BuildExistingResultAsync(
@@ -361,6 +385,14 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 + $" expected={testPricing.ExpectedTotalCents}"
                 + $" actual={pricing.TotalDueNowCents}");
         }
+        if (privateTest is not null)
+        {
+            privateTest = BillingV2PrivateVatTestPolicy.CheckSelectionAndAmount(
+                _runtime, _stripe, session, checkoutRequest, mapping,
+                pricing, provider, DateTime.UtcNow);
+            if (!privateTest.Authorized)
+                throw new InvalidOperationException(privateTest.ReasonCode);
+        }
         var checkoutReadiness = await _readiness.CheckAsync(
             new BillingV2CheckoutReadinessRequest(
                 presetItems
@@ -368,7 +400,8 @@ public sealed class BillingV2AuthoritativeCheckoutService
                     .Distinct(StringComparer.Ordinal)
                     .ToArray(),
                 provider,
-                environment),
+                environment,
+                PrivateVatTestAuthorized: privateTest?.Authorized == true),
             cancellationToken);
         var checkoutPlan = BillingV2CheckoutPlanner.Plan(
             checkoutReadiness,
@@ -2472,19 +2505,25 @@ public static class BillingV2AuthoritativeCheckoutGate
     public static BillingV2AuthoritativeCheckoutReadiness Evaluate(
         BillingV2RuntimeConfiguration runtime,
         bool persistentSqlAvailable,
-        string? idempotencyKey)
+        string? idempotencyKey,
+        bool privateVatTestAuthorized = false)
     {
-        if (!runtime.NewSubscriptionsEnabled)
+        var privateMode = runtime.PrivateVatTestEnabled && privateVatTestAuthorized;
+        if (!runtime.NewSubscriptionsEnabled && !privateMode)
         {
             return Blocked("BILLING_V2_NEW_SUBSCRIPTIONS_FLAG_OFF");
         }
 
-        if (!runtime.AuthoritativeCheckoutEnabled)
+        if (runtime.PrivateVatTestEnabled && !privateVatTestAuthorized)
+        {
+            return Blocked("PRIVATE_VAT_TEST_ACCOUNT_NOT_ALLOWED");
+        }
+        if (!runtime.AuthoritativeCheckoutEnabled && !privateMode)
         {
             return Blocked("BILLING_V2_AUTHORITATIVE_CHECKOUT_FLAG_OFF");
         }
 
-        if (!runtime.FirstRealSubscriptionApproved)
+        if (!runtime.FirstRealSubscriptionApproved && !privateMode)
         {
             return Blocked(
                 "BILLING_V2_FIRST_REAL_SUBSCRIPTION_NOT_APPROVED");

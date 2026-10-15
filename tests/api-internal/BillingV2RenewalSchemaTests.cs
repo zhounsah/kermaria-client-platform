@@ -551,6 +551,8 @@ public static class BillingV2RenewalSchemaTests
         var stripe = new StripeRuntimeConfiguration(StripeMode.Test, "sk_test_fake");
         var rail = new BillingV2StripeRailService(
             sql,
+            new BillingV2RuntimeConfiguration(false, false, false, false,
+                false, false),
             stripe,
             gateway,
             SystemBillingV2Clock.Instance,

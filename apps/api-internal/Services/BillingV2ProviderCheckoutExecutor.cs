@@ -91,6 +91,16 @@ public sealed class BillingV2ProviderCheckoutExecutor
         BillingV2ProviderCheckoutExecutionRequest request,
         CancellationToken cancellationToken)
     {
+        // Cet ancien rail à Price IDs ne porte aucun instantané fiscal.
+        // Pendant la recette privée, seule la passerelle inline contrôlée
+        // par BillingV2StripeRailService peut créer une Session.
+        if (_runtime.PrivateVatTestEnabled
+            || !_runtime.AuthoritativeCheckoutEnabled)
+        {
+            return new BillingV2ProviderCheckoutExecutionResult(
+                false, "PRIVATE_VAT_TEST_LEGACY_PROVIDER_CHECKOUT_CLOSED",
+                null, null, null, null);
+        }
         if (!CanExecute)
         {
             return await DisabledBillingV2ProviderCheckoutExecutor.Instance

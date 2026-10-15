@@ -25,6 +25,12 @@ public sealed record BillingV2ProviderInboundEventResult(
     string? SubscriptionId,
     string? CheckoutSessionId);
 
+public static class BillingV2ProviderInboundGate
+{
+    public static bool CanProcess(SqlRuntimeConfiguration sql)
+        => sql.IsPersistent && !string.IsNullOrWhiteSpace(sql.ConnectionString);
+}
+
 public sealed record BillingV2ProviderLocalState(
     string? CheckoutSessionId,
     string SubscriptionId,
@@ -108,12 +114,13 @@ public sealed class BillingV2ProviderInboundEventService
         BillingV2ProviderInboundEventRequest request,
         CancellationToken cancellationToken)
     {
-        if (!_configuration.AuthoritativeCheckoutEnabled
-            || !_sql.IsPersistent
-            || string.IsNullOrWhiteSpace(_sql.ConnectionString))
+        // La fermeture des nouveaux Checkout ne doit jamais perdre un webhook
+        // d'une session déjà créée. Le rattachement à la session locale et la
+        // vérification provider restent obligatoires plus bas.
+        if (!BillingV2ProviderInboundGate.CanProcess(_sql))
         {
             _logger.LogWarning(
-                "Billing V2 provider inbound event {ProviderEventId} blocked: checkout V2 is not authoritative or SQL is not persistent. No local subscription was changed.",
+                "Billing V2 provider inbound event {ProviderEventId} blocked: SQL is not persistent. No local subscription was changed.",
                 request.ProviderEventId);
             return new BillingV2ProviderInboundEventResult(
                 Applied: false,

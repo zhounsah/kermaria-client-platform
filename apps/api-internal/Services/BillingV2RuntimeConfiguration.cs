@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Kermaria.ApiInternal.Services;
 
 public sealed record BillingV2RuntimeConfiguration(
@@ -32,7 +34,14 @@ public sealed record BillingV2RuntimeConfiguration(
     // La boutique ne choisit jamais ce rail. Phase 4 ouvre explicitement le
     // seul rail teste; une valeur inconnue est refusee fermement par la policy
     // Cart au lieu de basculer implicitement vers un autre provider.
-    string CartCheckoutProvider = "stripe")
+    string CartCheckoutProvider = "stripe",
+    bool PrivateVatTestEnabled = false,
+    string? PrivateVatTestId = null,
+    string? PrivateVatTestUserId = null,
+    string? PrivateVatTestCustomerId = null,
+    string? PrivateVatTestSelectionFingerprint = null,
+    DateTime? PrivateVatTestStartsAtUtc = null,
+    DateTime? PrivateVatTestExpiresAtUtc = null)
 {
     public const int DefaultReconciliationIntervalSeconds = 300;
     public const int MinimumReconciliationIntervalSeconds = 30;
@@ -76,7 +85,18 @@ public sealed record BillingV2RuntimeConfiguration(
             VpsCloudAutomationEnabled = ReadFlag(configuration, "BILLING_V2_VPS_CLOUD_AUTOMATION_ENABLED"),
             RefundsEnabled = ReadFlag(configuration, "BILLING_V2_REFUNDS_ENABLED"),
             CartCheckoutProvider = ResolveCartCheckoutProvider(
-                configuration["BILLING_V2_CART_CHECKOUT_PROVIDER"])
+                configuration["BILLING_V2_CART_CHECKOUT_PROVIDER"]),
+            PrivateVatTestEnabled = ReadFlag(configuration,
+                "BILLING_V2_PRIVATE_VAT_TEST_ENABLED"),
+            PrivateVatTestId = configuration["BILLING_V2_PRIVATE_VAT_TEST_ID"]?.Trim(),
+            PrivateVatTestUserId = configuration["BILLING_V2_PRIVATE_VAT_TEST_USER_ID"]?.Trim(),
+            PrivateVatTestCustomerId = configuration["BILLING_V2_PRIVATE_VAT_TEST_CUSTOMER_ID"]?.Trim(),
+            PrivateVatTestSelectionFingerprint = configuration[
+                "BILLING_V2_PRIVATE_VAT_TEST_SELECTION_FINGERPRINT"]?.Trim(),
+            PrivateVatTestStartsAtUtc = ParseExactUtc(configuration[
+                "BILLING_V2_PRIVATE_VAT_TEST_STARTS_AT_UTC"]),
+            PrivateVatTestExpiresAtUtc = ParseExactUtc(configuration[
+                "BILLING_V2_PRIVATE_VAT_TEST_EXPIRES_AT_UTC"])
         };
 
     private static bool ReadFlag(IConfiguration configuration, string key)
@@ -102,6 +122,15 @@ public sealed record BillingV2RuntimeConfiguration(
         => string.IsNullOrWhiteSpace(rawValue)
             ? "stripe"
             : rawValue.Trim().ToLowerInvariant();
+
+    private static DateTime? ParseExactUtc(string? rawValue)
+        => DateTimeOffset.TryParseExact(rawValue,
+            "yyyy-MM-dd'T'HH:mm:ss'Z'",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+            out var value)
+            ? value.UtcDateTime
+            : null;
 
     private static BillingV2RuntimeConfiguration ResolveCore(
         IConfiguration configuration)

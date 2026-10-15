@@ -57,6 +57,14 @@ export function isStripeConfigured(): boolean {
   );
 }
 
+/** Le paiement ponctuel d'une facture utilise un Checkout Stripe distinct du
+ * rail Billing V2. Il reste fermé pendant la recette privée TVA ; une
+ * réouverture éventuelle exige une décision et une configuration explicites. */
+export function isStripeOneShotDocumentCheckoutEnabled(): boolean {
+  return process.env.STRIPE_ONE_SHOT_DOCUMENT_CHECKOUT_ENABLED
+    ?.trim().toLowerCase() === "true";
+}
+
 /** Ouvre le parcours de changement de mot de passe. Le drapeau est lu au même
  *  endroit par la page /password et par le profil, pour que l'espace client
  *  n'annonce jamais un parcours que l'API interne refusera. */

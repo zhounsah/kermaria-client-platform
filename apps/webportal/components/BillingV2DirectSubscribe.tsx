@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import type {
   BillingV2PublicCatalog,
   BillingV2PublicPriceComponent,
+  BillingV2PrivateVatTestEligibility,
   BillingV2PublicQuote,
   BillingV2PublicSelection,
   BillingV2PublicSelectionComponent,
@@ -83,6 +84,22 @@ export function BillingV2DirectSubscribe({ catalog, cgvVersionLabel }: Props) {
   const [acceptedCgv, setAcceptedCgv] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitStatus, setSubmitStatus] = useState<string | null>(null);
+  const [privateEligibility, setPrivateEligibility] =
+    useState<BillingV2PrivateVatTestEligibility | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/billing-v2/private-vat-test/eligibility", {
+      cache: "no-store", signal: controller.signal,
+    }).then(async (response) => response.ok
+      ? await response.json() as BillingV2PrivateVatTestEligibility
+      : null)
+      .then((value) => setPrivateEligibility(value))
+      .catch(() => { if (!controller.signal.aborted) setPrivateEligibility(null); });
+    const timer = window.setInterval(() => setNowMs(Date.now()), 15000);
+    return () => { controller.abort(); window.clearInterval(timer); };
+  }, []);
 
   const components = useMemo(() => toComponents(draft), [draft]);
   const selectionKey = useMemo(
@@ -100,6 +117,21 @@ export function BillingV2DirectSubscribe({ catalog, cgvVersionLabel }: Props) {
   const current =
     outcome !== null && outcome.key === selectionKey ? outcome : null;
   const pending = selection !== null && current === null;
+  const privatePilotReady = privateEligibility?.eligible === true
+    && privateEligibility.expectedTotalCents === 590
+    && privateEligibility.expectedTaxCents === 98
+    && privateEligibility.expiresAtUtc !== null
+    && Date.parse(privateEligibility.expiresAtUtc) - nowMs >= 30 * 60 * 1000
+    && components.length === 1
+    && components[0]?.serviceCode === "STORAGE-SHARED"
+    && components[0]?.tierCode === "64"
+    && components[0]?.quantity === 1
+    && selection?.commitmentCode === "FLEX"
+    && selection.paymentMode === "monthly"
+    && current?.quote?.totalDueNowCents === 590
+    && current.quote.monthlyAfterDiscountCents === 590
+    && current.quote.oneTimeCents === 0
+    && current.quote.taxAmountCents === 98;
 
   useEffect(() => {
     if (!selection || selectionKey === null) {
@@ -198,7 +230,8 @@ export function BillingV2DirectSubscribe({ catalog, cgvVersionLabel }: Props) {
   }
 
   async function submit() {
-    if (!selection || !current?.quote?.checkoutAvailable || !acceptedCgv || !cgvVersionLabel || submitting) {
+    if (!selection || (!current?.quote?.checkoutAvailable && !privatePilotReady)
+      || !acceptedCgv || !cgvVersionLabel || submitting) {
       return;
     }
 
@@ -424,10 +457,11 @@ export function BillingV2DirectSubscribe({ catalog, cgvVersionLabel }: Props) {
           <input checked={acceptedCgv} disabled={!cgvVersionLabel} onChange={(event) => setAcceptedCgv(event.target.checked)} type="checkbox" />
           {" "}J’accepte les <Link href="/cgv" target="_blank">CGV en vigueur</Link>{cgvVersionLabel ? ` (${cgvVersionLabel})` : ""}.
         </label>
-        {current?.quote && !current.quote.checkoutAvailable ? <p className="subscribe-direct-note" role="status">Le paiement en ligne est temporairement indisponible pendant la vérification de la facturation.</p> : null}
+        {privatePilotReady ? <p className="subscribe-direct-note" role="status">Recette TVA privée : un seul abonnement de 5,90 € TTC par mois peut être testé avec ce compte pendant la fenêtre autorisée.</p> : null}
+        {current?.quote && !current.quote.checkoutAvailable && !privatePilotReady ? <p className="subscribe-direct-note" role="status">Le paiement en ligne est temporairement indisponible pendant la vérification de la facturation.</p> : null}
         <button
           className="button"
-          disabled={!selection || !current?.quote?.checkoutAvailable || !acceptedCgv || !cgvVersionLabel || submitting}
+          disabled={!selection || (!current?.quote?.checkoutAvailable && !privatePilotReady) || !acceptedCgv || !cgvVersionLabel || submitting}
           onClick={() => void submit()}
           type="button"
         >

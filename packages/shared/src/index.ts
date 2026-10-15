@@ -2966,6 +2966,15 @@ export interface BillingV2CartCheckoutStatusResponse {
   retryable: boolean;
 }
 
+/** Éligibilité de recette privée, limitée à la session courante. Aucun ID
+ * client, utilisateur ou Stripe n'est transmis au navigateur. */
+export interface BillingV2PrivateVatTestEligibility {
+  eligible: boolean;
+  expectedTotalCents: number;
+  expectedTaxCents: number;
+  expiresAtUtc: string | null;
+}
+
 /**
  * Préparation technique non secrète d'un VPS. Les codes catalogue restent une
  * intention : API-INTERNAL les revalide avant de conserver la demande et de

@@ -12,6 +12,7 @@ public static class BillingV2NewSubscriptionTests
 {
     public static async Task RunAsync()
     {
+        BillingV2PrivateVatTestTests.Run();
         VerifyPresetPlannerCreatesPrimaryUserItems();
         VerifyPresetPlannerKeepsSubscriptionScopedItemsUnassigned();
         VerifyPresetPlannerCreatesAdditionalUserEntitlement();

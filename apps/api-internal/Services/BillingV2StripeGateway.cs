@@ -236,6 +236,15 @@ public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
         BillingV2StripeCheckoutRequest request,
         CancellationToken cancellationToken)
     {
+        var privateGate = BillingV2PrivateVatTestPolicy.CheckGateway(
+            _runtime, _stripe, request, DateTime.UtcNow);
+        if (!privateGate.Authorized)
+        {
+            return new BillingV2StripeCreateResult(
+                false, privateGate.ReasonCode, null, null, null, null,
+                "La création de Checkout est fermée ou hors de la recette privée.",
+                Retryable: false);
+        }
         if (!CanExecute)
         {
             return await DisabledBillingV2StripeGateway.Instance

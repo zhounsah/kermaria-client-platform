@@ -12,6 +12,7 @@ import {
   getInternalApiUrl,
   getInternalServiceHeaders,
   isStripeConfigured,
+  isStripeOneShotDocumentCheckoutEnabled,
 } from "@/lib/runtime-config";
 import { createStripeOneShotCheckoutSession } from "@/lib/stripe";
 
@@ -37,6 +38,12 @@ export async function POST(request: NextRequest) {
   const correlationId = resolveCorrelationId(
     request.headers.get(CORRELATION_HEADER),
   );
+
+  if (!isStripeOneShotDocumentCheckoutEnabled()) {
+    return errorJson(503, "STRIPE_DOCUMENT_CHECKOUT_CLOSED",
+      "Le paiement ponctuel de factures est temporairement fermé.",
+      correlationId);
+  }
 
   if (!isStripeConfigured()) {
     return errorJson(
