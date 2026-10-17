@@ -68,8 +68,6 @@ export function PublicCommercialTariffCatalog({
         </div>
       ) : null}
 
-      <p className="commercial-tariffs-tax-notice">{catalog.taxNotice}</p>
-
       <div className="commercial-tariffs-groups">
         {groupServicesByCategory(visibleServices).map(([category, services]) => (
           <section className="commercial-tariffs-group" key={category} aria-labelledby={`commercial-category-${slug(category)}`}>
@@ -80,7 +78,6 @@ export function PublicCommercialTariffCatalog({
                   currency={currency}
                   key={service.id}
                   service={service}
-                  taxNotice={catalog.taxNotice}
                 />
               ))}
             </div>
@@ -94,11 +91,9 @@ export function PublicCommercialTariffCatalog({
 function CommercialTariffCard({
   currency,
   service,
-  taxNotice,
 }: {
   currency: string;
   service: PublicCommercialService;
-  taxNotice: string;
 }) {
   return (
     <article className="commercial-tariff-card">
@@ -107,7 +102,7 @@ function CommercialTariffCard({
         {service.description ? <p>{service.description}</p> : null}
       </div>
 
-      <PriceSummary service={service} taxNotice={taxNotice} />
+      <PriceSummary service={service} />
 
       {service.tiers.length > 0 ? (
         <details className="commercial-tariff-tiers">
@@ -163,10 +158,8 @@ function CommercialTariffCard({
 
 function PriceSummary({
   service,
-  taxNotice,
 }: {
   service: PublicCommercialService;
-  taxNotice: string;
 }) {
   if (service.priceType === "quote" || !service.startingPrice) {
     return <p className="commercial-tariff-price commercial-tariff-price-quote">Sur devis</p>;
@@ -184,7 +177,6 @@ function PriceSummary({
           + {formatMoney(fee)} TTC de frais de mise en service{frenchNetHint(fee)}
         </p>
       ))}
-      <p className="commercial-tariff-tax">{taxNotice}</p>
     </div>
   );
 }

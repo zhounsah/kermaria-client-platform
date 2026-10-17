@@ -3266,7 +3266,6 @@ fieldset.form-field > .form-hint {
 .commercial-tariffs-filters button { min-height: 40px; padding: 8px 13px; border: 1px solid var(--border); border-radius: 999px; color: var(--text); background: var(--surface); font: inherit; font-size: .9rem; font-weight: 700; cursor: pointer; }
 .commercial-tariffs-filters button:hover, .commercial-tariffs-filters button:focus-visible { border-color: var(--primary); color: var(--primary-dark); }
 .commercial-tariffs-filters button.is-selected { border-color: var(--primary); color: var(--white); background: var(--primary); }
-.commercial-tariffs-tax-notice { margin: 0; color: var(--muted); font-size: .88rem; }
 .commercial-tariffs-groups { display: grid; gap: 36px; }
 .commercial-tariffs-group { display: grid; gap: 16px; }
 .commercial-tariffs-group > h3 { margin: 0; font-size: clamp(1.3rem, 2.4vw, 1.65rem); }
@@ -3278,7 +3277,7 @@ fieldset.form-field > .form-hint {
 .commercial-tariff-price { margin: 0; color: var(--primary-dark); font-size: 1.35rem; font-weight: 800; line-height: 1.25; }
 .commercial-tariff-price span { font-size: .86rem; font-weight: 600; }
 .commercial-tariff-price-quote { color: var(--text); }
-.commercial-tariff-fee, .commercial-tariff-tax { margin: 0; color: var(--muted); font-size: .84rem; line-height: 1.45; }
+.commercial-tariff-fee { margin: 0; color: var(--muted); font-size: .84rem; line-height: 1.45; }
 .commercial-tariff-tiers { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding-block: 12px; }
 .commercial-tariff-tiers summary { color: var(--primary-dark); font-weight: 700; cursor: pointer; }
 .commercial-tariff-tiers ul { display: grid; margin: 12px 0 0; padding: 0; list-style: none; gap: 10px; }

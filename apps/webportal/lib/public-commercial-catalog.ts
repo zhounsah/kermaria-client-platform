@@ -51,22 +51,18 @@ export function buildPublicCommercialCatalog(
   if (catalog.source === "unavailable") {
     return {
       source: catalog.source,
-      taxNotice: TAX_NOTICE,
       services: [],
     };
   }
 
   return {
     source: catalog.source,
-    taxNotice: TAX_NOTICE,
     services: catalog.services
       .filter((service) => service.publicVisible)
       .map((service, index) => projectService(service, catalog, index + 1))
       .sort((left, right) => left.displayOrder - right.displayOrder || left.name.localeCompare(right.name, "fr")),
   };
 }
-
-const TAX_NOTICE = "Prix TTC pour une opération française taxable. Le montant HT indicatif figure sous le prix ; le devis final dépend de la qualification fiscale du client.";
 
 const CATEGORY_PRESENTATION: Readonly<Record<string, string>> = {
   "Accès": "Postes et accès à distance",

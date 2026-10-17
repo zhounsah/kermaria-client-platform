@@ -2634,11 +2634,6 @@ export type PublicCommercialService = {
 
 export type PublicCommercialCatalog = {
   source: string;
-  /**
-   * Formulation fiscale centralisee pour la vitrine. Elle est provisoire tant
-   * qu'aucune autorite fiscale fiable ne permet de publier HT ou TTC.
-   */
-  taxNotice: string;
   services: PublicCommercialService[];
 };
 

@@ -26,7 +26,7 @@ assert.match(projection, /catalog\.services[\s\S]*filter\(\(service\) => service
 assert.match(projection, /service\.flatMonthlyAmountCents/);
 assert.match(projection, /tier\.monthlyAmountCents/);
 assert.match(projection, /billingCadence === "one_time"[\s\S]*chargeTrigger === "initial_subscription"/);
-assert.match(projection, /TAX_NOTICE = "Prix TTC pour une opération française taxable/);
+assert.doesNotMatch(projection, /Prix TTC pour une opération française taxable/);
 assert.match(tariffsComponent, /frenchNetHint\(service\.startingPrice\)/);
 assert.match(projection, /ventilation indicative française proviennent d'API-INTERNAL/);
 assert.match(projection, /ne signifie pas qu'un service est achetable seul/);
@@ -51,8 +51,7 @@ assert.match(tariffsComponent, /aria-pressed/);
 assert.match(tariffsComponent, /Catalogue tarifaire/);
 assert.match(tariffsComponent, /Voir les options disponibles/);
 assert.match(tariffsComponent, /frais de mise en service/);
-assert.match(tariffsComponent, /catalog\.taxNotice/);
-assert.match(tariffsComponent, /taxNotice/);
+assert.doesNotMatch(tariffsComponent, /taxNotice/);
 assert.doesNotMatch(tariffsComponent, /Hors taxes applicables|Montants affichés hors taxes applicables/);
 assert.match(tariffsComponent, /Sur devis/);
 

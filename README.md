@@ -38,10 +38,12 @@ Ordre de lecture recommande :
 6. [`docs/GUIDE_ADMIN.md`](docs/GUIDE_ADMIN.md)
 7. [`docs/releases/V2.1.0.md`](docs/releases/V2.1.0.md)
 
-Production courante : `v2.1.0`, commit `09737e2bd644c44faa80a723fc7b1ea42496b332`.
-Candidate locale `v2.1.1` : conformité TVA au 01/10/2026 préparée et
-testée sur DEV, sans tag ni déploiement PROD. Pré-état, conditions GO/NO-GO,
-migration et rollback :
+WebPortal PROD observé le 2026-10-17 avant ce correctif :
+`v2.1.1-hotfix.1`. Le correctif WebPortal `v2.1.1-hotfix.3` retire la
+phrase fiscale répétée sur `/tarifs` ; voir
+[`docs/releases/V2.1.1_HOTFIX_3_TARIFS_COPY.md`](docs/releases/V2.1.1_HOTFIX_3_TARIFS_COPY.md).
+Le dossier de préparation TVA du 2026-10-14 conserve le pré-état,
+les conditions GO/NO-GO, la migration et le rollback :
 [`docs/releases/TVA_PROD_PREPARATION_2026-10-14.md`](docs/releases/TVA_PROD_PREPARATION_2026-10-14.md).
 La refonte de la vitrine, le constructeur de pages et les demandes de données
 sont livrés sur SRV-12/SRV-13. Voir les preuves et le retour arrière dans

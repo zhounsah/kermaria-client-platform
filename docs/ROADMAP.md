@@ -1,11 +1,14 @@
 # Feuille de route
 
-> CANDIDATE EN PRÉPARATION - 2026-10-14
+> Correctif WebPortal `v2.1.1-hotfix.3` : simplification du texte de `/tarifs`
+> sans changement des montants ni de la facturation. Voir
+> [`releases/V2.1.1_HOTFIX_3_TARIFS_COPY.md`](releases/V2.1.1_HOTFIX_3_TARIFS_COPY.md).
+>
+> REPÈRE HISTORIQUE - PRÉPARATION DU 2026-10-14
 >
 > `v2.1.1` regroupe la mise en conformité TVA, les archives légales et la
-> conservation des PDF BPCE. Les binaires et contenus DEV sont en recette ;
-> la fermeture des achats PROD, les modifications BPCE/Stripe Live, la
-> migration 102 et la livraison PROD attendent une autorisation distincte.
+> conservation des PDF BPCE. À cette date, les binaires et contenus DEV
+> étaient en recette et la livraison PROD attendait une autorisation distincte.
 > Voir [`releases/TVA_PROD_PREPARATION_2026-10-14.md`](releases/TVA_PROD_PREPARATION_2026-10-14.md).
 
 > POINT DE REPÈRE ACTUEL - 2026-10-07

@@ -12,6 +12,12 @@
 
 ## État courant / informations récentes
 
+### Correctif de présentation Tarifs
+
+- `v2.1.1-hotfix.3` retire de `/tarifs` la phrase fiscale répétée dans le
+  catalogue et les cartes. Aucun calcul, Checkout, document ou paramètre
+  fournisseur n'est modifié. Voir `docs/releases/V2.1.1_HOTFIX_3_TARIFS_COPY.md`.
+
 ### Recette TVA privée (préparation locale du 2026-10-14)
 
 - Depuis la base immuable `v2.1.1` / `5ce2898`, le correctif
