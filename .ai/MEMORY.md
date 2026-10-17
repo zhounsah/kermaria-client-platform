@@ -14,6 +14,10 @@
 
 ### Correctif de présentation Tarifs
 
+- `v2.1.1-hotfix.4` réserve dans chaque carte une ligne pour le lien
+  secondaire, afin d'aligner les boutons principaux d'une même rangée sur
+  `/tarifs`. Changement CSS du WebPortal uniquement. Voir
+  `docs/releases/V2.1.1_HOTFIX_4_TARIFF_ACTION_ALIGNMENT.md`.
 - `v2.1.1-hotfix.3` retire de `/tarifs` la phrase fiscale répétée dans le
   catalogue et les cartes. Aucun calcul, Checkout, document ou paramètre
   fournisseur n'est modifié. Voir `docs/releases/V2.1.1_HOTFIX_3_TARIFS_COPY.md`.

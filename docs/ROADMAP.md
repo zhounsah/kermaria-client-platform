@@ -1,5 +1,9 @@
 # Feuille de route
 
+> Correctif WebPortal `v2.1.1-hotfix.4` : boutons principaux alignés dans
+> chaque rangée de `/tarifs`. Voir
+> [`releases/V2.1.1_HOTFIX_4_TARIFF_ACTION_ALIGNMENT.md`](releases/V2.1.1_HOTFIX_4_TARIFF_ACTION_ALIGNMENT.md).
+>
 > Correctif WebPortal `v2.1.1-hotfix.3` : simplification du texte de `/tarifs`
 > sans changement des montants ni de la facturation. Voir
 > [`releases/V2.1.1_HOTFIX_3_TARIFS_COPY.md`](releases/V2.1.1_HOTFIX_3_TARIFS_COPY.md).

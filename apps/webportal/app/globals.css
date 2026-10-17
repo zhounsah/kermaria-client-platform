@@ -3286,7 +3286,7 @@ fieldset.form-field > .form-hint {
 .commercial-tariff-tier-fee { color: var(--muted); }
 .commercial-tariff-tier-fee-notice { margin: 0; color: var(--muted); font-size: .84rem; line-height: 1.45; }
 .commercial-tariff-status { color: var(--muted); font-size: .84rem; line-height: 1.45; }
-.commercial-tariff-actions { display: grid; gap: 10px; margin-top: auto; align-items: start; }
+.commercial-tariff-actions { display: grid; grid-template-rows: minmax(44px, auto) minmax(1.45em, auto); gap: 10px; margin-top: auto; align-items: start; }
 .commercial-tariff-actions .button { width: 100%; text-align: center; }
 .commercial-tariff-actions .service-inline-link { margin-top: 0; }
 .commercial-tariff-direct-add { display: grid; gap: 10px; }

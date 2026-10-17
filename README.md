@@ -38,10 +38,12 @@ Ordre de lecture recommande :
 6. [`docs/GUIDE_ADMIN.md`](docs/GUIDE_ADMIN.md)
 7. [`docs/releases/V2.1.0.md`](docs/releases/V2.1.0.md)
 
-WebPortal PROD observé le 2026-10-17 avant ce correctif :
+WebPortal PROD observé le 2026-10-17 avant `v2.1.1-hotfix.3` :
 `v2.1.1-hotfix.1`. Le correctif WebPortal `v2.1.1-hotfix.3` retire la
 phrase fiscale répétée sur `/tarifs` ; voir
 [`docs/releases/V2.1.1_HOTFIX_3_TARIFS_COPY.md`](docs/releases/V2.1.1_HOTFIX_3_TARIFS_COPY.md).
+`v2.1.1-hotfix.4` aligne les boutons principaux des cartes tarifaires ; voir
+[`docs/releases/V2.1.1_HOTFIX_4_TARIFF_ACTION_ALIGNMENT.md`](docs/releases/V2.1.1_HOTFIX_4_TARIFF_ACTION_ALIGNMENT.md).
 Le dossier de préparation TVA du 2026-10-14 conserve le pré-état,
 les conditions GO/NO-GO, la migration et le rollback :
 [`docs/releases/TVA_PROD_PREPARATION_2026-10-14.md`](docs/releases/TVA_PROD_PREPARATION_2026-10-14.md).
