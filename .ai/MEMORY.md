@@ -14,6 +14,9 @@
 
 ### Correctif de présentation Tarifs
 
+- `v2.1.1-hotfix.5` remplace `(montant HT, estimation France)` par
+  `(montant HT)` dans les cartes de `/tarifs`, sans changer les montants ni
+  les calculs. Voir `docs/releases/V2.1.1_HOTFIX_5_TARIFF_HT_LABEL.md`.
 - `v2.1.1-hotfix.4` réserve dans chaque carte une ligne pour le lien
   secondaire, afin d'aligner les boutons principaux d'une même rangée sur
   `/tarifs`. Changement CSS du WebPortal uniquement. Voir

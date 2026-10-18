@@ -1,5 +1,8 @@
 # Feuille de route
 
+> Correctif WebPortal `v2.1.1-hotfix.5` : légende HT simplifiée sur `/tarifs`.
+> Voir [`releases/V2.1.1_HOTFIX_5_TARIFF_HT_LABEL.md`](releases/V2.1.1_HOTFIX_5_TARIFF_HT_LABEL.md).
+>
 > Correctif WebPortal `v2.1.1-hotfix.4` : boutons principaux alignés dans
 > chaque rangée de `/tarifs`. Voir
 > [`releases/V2.1.1_HOTFIX_4_TARIFF_ACTION_ALIGNMENT.md`](releases/V2.1.1_HOTFIX_4_TARIFF_ACTION_ALIGNMENT.md).

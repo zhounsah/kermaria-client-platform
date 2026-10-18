@@ -217,7 +217,7 @@ function formatMoney(money: PublicCommercialMoney) {
 function frenchNetHint(money: PublicCommercialMoney) {
   return money.frenchNetAmountCents === undefined
     ? null
-    : <small> ({formatMoney({ amountCents: money.frenchNetAmountCents, currency: money.currency })} HT, estimation France)</small>;
+    : <small> ({formatMoney({ amountCents: money.frenchNetAmountCents, currency: money.currency })} HT)</small>;
 }
 
 function priceUnit(service: PublicCommercialService) {

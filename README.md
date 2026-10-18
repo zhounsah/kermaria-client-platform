@@ -44,6 +44,8 @@ phrase fiscale répétée sur `/tarifs` ; voir
 [`docs/releases/V2.1.1_HOTFIX_3_TARIFS_COPY.md`](docs/releases/V2.1.1_HOTFIX_3_TARIFS_COPY.md).
 `v2.1.1-hotfix.4` aligne les boutons principaux des cartes tarifaires ; voir
 [`docs/releases/V2.1.1_HOTFIX_4_TARIFF_ACTION_ALIGNMENT.md`](docs/releases/V2.1.1_HOTFIX_4_TARIFF_ACTION_ALIGNMENT.md).
+`v2.1.1-hotfix.5` simplifie la légende HT de `/tarifs` ; voir
+[`docs/releases/V2.1.1_HOTFIX_5_TARIFF_HT_LABEL.md`](docs/releases/V2.1.1_HOTFIX_5_TARIFF_HT_LABEL.md).
 Le dossier de préparation TVA du 2026-10-14 conserve le pré-état,
 les conditions GO/NO-GO, la migration et le rollback :
 [`docs/releases/TVA_PROD_PREPARATION_2026-10-14.md`](docs/releases/TVA_PROD_PREPARATION_2026-10-14.md).
