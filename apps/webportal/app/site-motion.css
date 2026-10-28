@@ -4,6 +4,7 @@
  * rythmes visuels publics et leurs états de mouvement sont ajustés.
  */
 :root {
+  --slate-500: #53627a;
   --muted: #53627a;
   --site-ink: #081630;
   --site-body: #34445b;
