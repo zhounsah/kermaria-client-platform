@@ -99,6 +99,13 @@
 
 ### Vitrine, SEO et éditorial
 
+- **Refonte professionnelle Zachary IT (DEV 2026-10-28, pas PROD)** : la branche
+  `codex/zachary-it-refonte-ready` conserve les hotfixes d'`origin/main`.
+  WebPortal DEV, contenus CMS via BFF, audit argumenté, charte, captures et
+  recette responsive/accessibilité/performance :
+  [site-refonte-professionnelle-2026-10-28.md](topics/site-refonte-professionnelle-2026-10-28.md)
+  et `docs/rapport-refonte-site.md`. L'API DEV n'a pas été redémarrée à cause
+  des intégrations externes actives ; la PROD n'a pas été modifiée.
 - **Refonte UX et CMS (DEV 2026-10-05, PROD 2026-10-07)** : accueil,
   parcours publics et footer réorganisés via un constructeur versionné,
   demandes de données personnelles par utilisateur, médiathèque, et option
