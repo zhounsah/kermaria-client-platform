@@ -12,6 +12,7 @@ import { PUBLIC_BRAND_NAME, PUBLIC_SITE_NAME } from "@/lib/public-metadata";
 import { PUBLIC_SITE_URL } from "@/lib/public-route-config";
 import "./globals.css";
 import "./site-refonte.css";
+import "./site-motion.css";
 
 const inter = localFont({
   src: "../assets/fonts/inter-latin-variable.woff2",

@@ -26,6 +26,7 @@ const [
   robots,
   sitemap,
   styles,
+  vitrineHero,
 ] = await Promise.all([
   read("app/page.tsx"),
   read("components/PublicShell.tsx"),
@@ -47,6 +48,7 @@ const [
   read("app/robots.ts"),
   read("app/sitemap.ts"),
   read("app/globals.css"),
+  read("components/VitrineHero.tsx"),
 ]);
 
 for (const [label, source] of [
@@ -55,8 +57,14 @@ for (const [label, source] of [
   ["ressources", ressourcesPage],
 ]) {
   assert.match(source, /buildPublicMetadata\(/, `${label} doit utiliser le helper SEO public.`);
-  assert.match(source, /<h1\b/, `${label} doit exposer un H1 explicite.`);
+  if (label === "accueil") {
+    assert.match(source, /<VitrineHero\b/, "l'accueil doit afficher le héros commun.");
+  } else {
+    assert.match(source, /<h1\b/, `${label} doit exposer un H1 explicite.`);
+  }
 }
+assert.match(vitrineHero, /<h1>/, "le héros commun doit exposer un H1 explicite.");
+assert.match(sitePageFrame, /block\.type === "hero"[\s\S]{0,100}<VitrineHero/, "le héros CMS doit utiliser le même H1.");
 assert.match(contactPage, /buildPublicMetadata\(/, "contact doit utiliser le helper SEO public.");
 assert.match(contactPage, /pageKey="\/contact"/, "contact doit utiliser sa mise en page publiée.");
 assert.match(sitePageFrame,
@@ -136,7 +144,7 @@ const loadingPage = await read("app/loading.tsx");
 assert.match(loadingPage, /minHeight:\s*"100vh"/);
 assert.match(loadingPage, /Chargement de la page/);
 assert.doesNotMatch(loadingPage, /Votre espace client/);
-assert.match(homePage, /fetchPriority="high"/);
+assert.match(vitrineHero, /fetchPriority="high"/);
 
 for (const [path, key] of [
   ["app/a-propos/page.tsx", "page:a-propos"],

@@ -25,3 +25,9 @@ La branche de revue `codex/zachary-it-refonte-ready` part de `origin/main` à `d
 ## Frontière DEV/PROD constatée
 
 Le WebPortal DEV actif est `/opt/kermaria/releases-dev/webportal-dev-zachary-ready-3e6ddc4`; l'environnement DEV existant a été préservé. Les mises en page accueil/contact/footer et les contenus À propos/Services/Offres ont été publiés par le BFF administrateur avec session et CSRF, sauvegardes JSON et relectures. Aucune migration SQL ni écriture directe MariaDB. L'API DEV n'a pas été redémarrée : sa configuration observée avait BPCE/e-mail live et AD `controlled_write`. La PROD est restée sur `v2.1.1-hotfix.5` ; revalider ces états avant toute autre opération.
+
+## Révision visuelle après retour du commanditaire
+
+Le premier rendu a été refusé pour sa neutralité. La référence demandée est `https://enzonaute.me/` ; reprendre son énergie, ses animations et son contraste de sections sans copier ses contenus, témoignages, chiffres ou engagements. La direction actuelle est décrite dans `docs/charte-site.md` : héros partagé `VitrineHero`, illustration légère `network-illustration-motion.webp`, typographie forte, bandeau défilant, sections ivoire/bleu/nuit, CSS View Timelines et réduction des mouvements. Le rendu CMS et le repli code doivent garder le même composant.
+
+Pièges mesurés : modifier les classes de sections depuis un effet React sibling avant l'hydratation du `SitePageFrame` provoque un avertissement d'hydratation. Les CSS View Timelines évitent ce couplage et laissent le contenu visible sans support navigateur. Animer l'opacité du texte fait échouer temporairement le contraste axe-core ; ne garder que translation/transform. Un bandeau `width:max-content` placé dans la grille du `SitePageFrame` agrandit la colonne implicite : fixer `grid-template-columns:minmax(0,1fr)` et contenir le bandeau. Le fond ivoire exige `--muted: #53627a` au lieu de `#64748b` pour conserver AA.

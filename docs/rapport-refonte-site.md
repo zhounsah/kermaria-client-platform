@@ -2,11 +2,30 @@
 
 **Date :** 28 octobre 2026
 
-**Branche de revue :** `codex/zachary-it-refonte-ready`, issue de `origin/main` à `dfc31c5` ; dernier commit applicatif `3e6ddc4`.
+**Branche de revue :** `codex/zachary-it-refonte-ready`, issue de `origin/main` à `dfc31c5`. La première livraison WebPortal DEV correspond au commit applicatif `3e6ddc4` ; la révision animée est décrite ci-dessous.
 
 **Périmètre livré en DEV :** WebPortal et contenus éditoriaux via BFF administrateur. Aucune livraison API, migration SQL ou modification PROD.
 
 ## Résultat
+
+### Révision visuelle après retour du commanditaire
+
+Le premier rendu a été jugé trop neutre. Après examen de [la référence indiquée](https://enzonaute.me/), l'accueil a été repris avec un titre plus direct, une typographie beaucoup plus présente, une illustration réseau originale, un index des services en mouvement et une alternance de sections ivoire, bleu et bleu nuit. Les entrées, les survols et le défilement sont animés ; `prefers-reduced-motion` supprime ces effets. Les contenus, prix, contacts et parcours métier restent fondés sur les mêmes sources.
+
+`VitrineHero` unifie le rendu par défaut et celui du CMS. Le visuel `network-illustration-motion.webp` pèse environ 48 Ko ; le précédent visuel de 116 Ko, désormais inutilisé, a été retiré. `site-motion.css` contient les mouvements et la nouvelle composition publique au-dessus du socle `site-refonte.css`. La [charte actualisée](charte-site.md) documente les tokens, les choix, les limites et la comparaison avec les concepts.
+
+La première implémentation des apparitions modifiait le DOM avant la fin de l'hydratation ; un avertissement React a conduit à la remplacer par des CSS View Timelines, avec affichage statique sur les navigateurs non compatibles. Un autre essai diminuait l'opacité du texte et échouait au contrôle de contraste pendant l'animation ; les mouvements finaux ne réduisent plus l'opacité. Le bandeau défilant a aussi reçu une contrainte de largeur pour empêcher un débordement sur tablette et ordinateur.
+
+| Vérification de la révision locale | Résultat observé |
+| --- | --- |
+| `npm run validate` | Réussi après mise à jour du test de contrat pour le héros partagé. Les trois avertissements ESLint préexistants restent sans erreur. |
+| Playwright, huit routes × quatre largeurs (320, 390, 768, 1440 px) | 32 vues : HTTP 200, un H1, aucun débordement global ni erreur console. Menu mobile, navigation Offres, formulaire vide et filtre Tarifs exercés. |
+| Axe-core, dix routes à 390 et 1440 px | Zéro violation automatisable sur 20 vues publiques ; ce contrôle ne remplace pas une revue manuelle WCAG 2.2 AA. |
+| Mouvement normal et réduit | `hero-enter`, `rail-flow` et `view()` observés en mode normal ; `none`, `none` et `auto` avec réduction des mouvements. La première ligne de services passe de sa position décalée à sa position finale au défilement. |
+
+Les nouvelles captures locales sont `docs/audit-captures/apres-animation-*.webp`. Elles se comparent aux captures `apres-accueil-*` de la première refonte et `avant-accueil-*` de l'état initial. La compilation locale utilise une API de développement en persistance mock, avec AD, BPCE, e-mail et paiements désactivés. La livraison et la recette sur DEV sont consignées plus bas lorsqu'elles sont effectuées.
+
+### Première livraison
 
 L'accueil annonce désormais les prestations et les publics professionnels dès le premier écran. Les pages Services, Offres, Tarifs et Contact utilisent une hiérarchie typographique commune, des listes et séparateurs lisibles, des boutons explicites et moins de cartes décoratives. Les textes commerciaux ont été repris sans inventer de client, prix, engagement ou certification. Les détails et prix des offres restent soumis au catalogue et au moteur serveur.
 
@@ -16,7 +35,7 @@ Le constructeur de pages, les fiches de service et les espaces authentifiés con
 
 | Groupe | Modifications |
 | --- | --- |
-| Direction visuelle | `apps/webportal/app/site-refonte.css` : tokens, mise en page, composants publics, responsive et états de focus. `network-office-editorial.webp` remplace l'image d'accueil d'environ 2,14 Mo par un visuel illustratif de 116 Ko. La charte et la revue des concepts sont dans [charte-site.md](charte-site.md). |
+| Direction visuelle initiale | `apps/webportal/app/site-refonte.css` : tokens, mise en page, composants publics, responsive et états de focus. Le premier visuel illustratif de 116 Ko a ensuite été remplacé pendant la révision animée. La charte et la revue des concepts sont dans [charte-site.md](charte-site.md). |
 | Parcours publics | Accueil, coque publique, services, offres et tarifs, contact, page de comparaison des accès distants, métadonnées, sitemap et pied de page. Le formulaire signale les champs invalides et y déplace le focus sans envoyer de demande vide. |
 | CMS et contenus | Valeurs initiales de l'API pour accueil/contact/pied de page, services et catalogue d'offres, texte « À propos », repli WebPortal et projections exactes d'anciens libellés. Le titre SEO d'un contenu CMS déjà suffixé ne duplique plus la marque. |
 | Espace client/admin | Espacements et contrôles homogènes. Le constructeur de pages a des labels visibles pour le type de bloc et le fichier, plus un aperçu nommé et accessible au clavier. |
@@ -36,7 +55,7 @@ L'[audit initial](audit-site.md) classe chaque constat comme valide, faux positi
 | axe-core DEV, WCAG 2.0/2.1/2.2 A et AA | 0 violation automatisable sur les 20 vues publiques et six vues client/admin examinées. | Un contrôle manuel au clavier et avec lecteur d'écran reste nécessaire pour conclure à la conformité WCAG 2.2 AA complète. |
 | Contact | Un envoi vide affiche trois erreurs associées aux champs requis, `aria-invalid`, et place le focus sur le nom. | Aucun message réel n'a été envoyé. |
 
-### Performance mesurée en DEV
+### Performance de la première livraison mesurée en DEV
 
 Lighthouse mobile a été exécuté une fois avant la livraison sur `https://dev.zachary-it.fr/`, puis une fois sur la release finale `3e6ddc4`, avec les mêmes options. Ces valeurs sont des **mesures de laboratoire ponctuelles** ; elles ne remplacent pas les Core Web Vitals de visiteurs réels.
 

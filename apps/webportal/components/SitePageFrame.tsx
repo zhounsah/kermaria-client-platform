@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { CmsConfigurableForm } from "@/components/CmsConfigurableForm";
+import { VitrineHero } from "@/components/VitrineHero";
 import { requestBffJson } from "@/lib/client-api";
 import { presentPublicSiteLayout } from "@/lib/public-site-editorial";
 
@@ -60,19 +61,11 @@ function SitePageBlockView({ block, area, slots, preview, previewLabels }: {
     ? <div className={`site-page-widget site-page-widget-${block.widgetKey}`}>
         {slots[block.widgetKey]}
       </div> : null;
-  if (block.type === "hero") return <section className="vitrine-hero-band">
-    <div className="vitrine-hero vitrine-hero-2026">
-      <div className="vitrine-hero-copy"><h1>{block.title}</h1><p className="vitrine-hero-lead">{block.body}</p>
-        <div className="vitrine-hero-actions">
-          {block.href ? <Link className="button" href={block.href}>{block.label ?? "Découvrir"}</Link> : null}
-          {items[0]?.href ? <Link className="button button-secondary" href={items[0].href}>{items[0].title}</Link> : null}
-        </div></div><div aria-hidden="true" className="vitrine-hero-media">
-          <Image alt="" fetchPriority="high" height={1024} loading="eager"
-            sizes="(max-width: 820px) 100vw, 50vw"
-            src={block.mediaId ? `/api/site-media/${encodeURIComponent(block.mediaId)}` : "/brand/network-office-editorial.webp"}
-            unoptimized width={1536} />
-        </div>
-    </div></section>;
+  if (block.type === "hero") return <VitrineHero
+    body={block.body ?? ""} title={block.title ?? ""} mediaId={block.mediaId}
+    primary={block.href ? { href: block.href, label: block.label ?? "Découvrir" } : undefined}
+    secondary={items[0]?.href ? { href: items[0].href, label: items[0].title } : undefined}
+  />;
   if (block.type === "audiences") return <section className="vitrine-audiences vitrine-audiences-first">
     <header className="vitrine-section-header"><h2>{block.title}</h2><p>{block.body}</p></header>
     <ul className="vitrine-audiences-grid">{items.map((item, index) => <li className="vitrine-audience-card" key={`${item.title}-${index}`}>

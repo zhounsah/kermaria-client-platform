@@ -178,7 +178,7 @@ const legacyHome = {
   ],
 };
 const presented = presentPublicSiteLayout(legacyHome);
-assert.equal(presented.blocks[0].title, "L'informatique de votre activité, suivie de près.");
+assert.equal(presented.blocks[0].title, "Votre informatique doit suivre votre activité.");
 assert.equal(presented.blocks[0].body, "Texte personnalisé conservé.");
 assert.equal(presented.blocks[0].href, "/contact");
 assert.equal(presented.blocks[0].items[0].href, "/services");

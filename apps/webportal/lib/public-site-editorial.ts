@@ -7,7 +7,8 @@ import type { SitePageBlock, SitePageBlockItem, SitePageLayout } from "@kermaria
  * aucun prix n'est calculé ici.
  */
 const legacyText = new Map<string, string>([
-  ["Une informatique fiable, simplement.", "L'informatique de votre activité, suivie de près."],
+  ["Une informatique fiable, simplement.", "Votre informatique doit suivre votre activité."],
+  ["L'informatique de votre activité, suivie de près.", "Votre informatique doit suivre votre activité."],
   ["Dépannage, installation, protection de vos fichiers et conseils : Zachary IT vous accompagne à la maison comme au travail.", "Maintenance, réseau, sauvegarde et accès à distance pour les professionnels, indépendants et petites structures."],
   ["Trouver une solution", "Demander un devis"],
   ["Demander un conseil", "Voir les services"],

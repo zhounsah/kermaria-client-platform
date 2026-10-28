@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import Image from "next/image";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 
@@ -18,6 +17,7 @@ import {
 } from "@/lib/public-route-config";
 import { JsonLd, localBusinessJsonLd, webSiteJsonLd } from "@/lib/seo";
 import { SitePageFrame } from "@/components/SitePageFrame";
+import { VitrineHero } from "@/components/VitrineHero";
 import { getPublicSitePageLayout } from "@/lib/internal-api";
 
 /**
@@ -170,37 +170,12 @@ export default async function HomePage() {
 
       <SitePageFrame area="public" pageKey="/" initialLayout={homeLayout.data}>
 
-      <section className="vitrine-hero-band">
-        <div className="vitrine-hero vitrine-hero-2026">
-          <div className="vitrine-hero-copy">
-            <h1>L&apos;informatique de votre activité, suivie de près.</h1>
-            <p className="vitrine-hero-lead">
-              Maintenance, réseau, sauvegarde et accès à distance pour les
-              professionnels, indépendants et petites structures.
-            </p>
-            <div className="vitrine-hero-actions">
-              <Link className="button" href="/contact">
-                Demander un devis
-              </Link>
-              <Link className="button button-secondary" href="/services">
-                Voir les services
-              </Link>
-            </div>
-          </div>
-          <div aria-hidden="true" className="vitrine-hero-media">
-            <Image
-              alt=""
-              fetchPriority="high"
-              height={1024}
-              loading="eager"
-              sizes="(max-width: 820px) 100vw, 50vw"
-              src="/brand/network-office-editorial.webp"
-              unoptimized
-              width={1536}
-            />
-          </div>
-        </div>
-      </section>
+      <VitrineHero
+        title="Votre informatique doit suivre votre activité."
+        body="Maintenance, réseau, sauvegarde et accès à distance pour les professionnels, indépendants et petites structures."
+        primary={{ href: "/contact", label: "Demander un devis" }}
+        secondary={{ href: "/services", label: "Voir les services" }}
+      />
 
       <section className="vitrine-audiences vitrine-audiences-first">
         <header className="vitrine-section-header">
