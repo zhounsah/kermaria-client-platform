@@ -63,7 +63,7 @@ for (const [label, source] of [
     assert.match(source, /<h1\b/, `${label} doit exposer un H1 explicite.`);
   }
 }
-assert.match(vitrineHero, /<h1>/, "le héros commun doit exposer un H1 explicite.");
+assert.match(vitrineHero, /<h1\b/, "le héros commun doit exposer un H1 explicite.");
 assert.match(sitePageFrame, /block\.type === "hero"[\s\S]{0,100}<VitrineHero/, "le héros CMS doit utiliser le même H1.");
 assert.match(contactPage, /buildPublicMetadata\(/, "contact doit utiliser le helper SEO public.");
 assert.match(contactPage, /pageKey="\/contact"/, "contact doit utiliser sa mise en page publiée.");

@@ -171,7 +171,7 @@ export default async function HomePage() {
       <SitePageFrame area="public" pageKey="/" initialLayout={homeLayout.data}>
 
       <VitrineHero
-        title="Votre informatique doit suivre votre activité."
+        title="Votre informatique suit votre activité."
         body="Maintenance, réseau, sauvegarde et accès à distance pour les professionnels, indépendants et petites structures."
         primary={{ href: "/contact", label: "Demander un devis" }}
         secondary={{ href: "/services", label: "Voir les services" }}

@@ -681,7 +681,7 @@ public sealed partial class SitePageService
         return area == "public" && pageKey == "/"
             ? new(pageKey, area, 0,
             [
-                new SitePageBlock("hero", "hero", "Votre informatique doit suivre votre activité.",
+                new SitePageBlock("hero", "hero", "Votre informatique suit votre activité.",
                     "Maintenance, réseau, sauvegarde et accès à distance pour les professionnels, indépendants et petites structures.",
                     "/contact", "Demander un devis", Items:
                     [new("Voir les services", null, "/services")]),

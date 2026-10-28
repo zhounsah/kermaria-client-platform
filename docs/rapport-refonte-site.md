@@ -8,6 +8,12 @@
 
 ## Résultat
 
+### Extension de l'effet à partir de l'enregistrement mobile
+
+Le film fourni le 28 octobre à 14 h 05 montre une ligne de titre qui change par séquences derrière un masque. L'accueil utilise maintenant trois phrases reliées aux prestations réellement présentes : l'informatique « suit votre activité », « sécurise vos accès » et « relie vos équipes ». Le premier message reste le nom accessible du H1 ; les variantes visuelles ne sont pas annoncées en boucle aux lecteurs d'écran. L'emplacement est réservé à hauteur fixe pour éviter que les boutons ou l'illustration ne sautent au changement de phrase. Les titres H1 des autres pages publiques entrent au chargement, et les H2/H3, listes, cartes d'offres, sections de contact et fiches de service avancent au défilement. La connexion et les espaces authentifiés ne reçoivent qu'une courte entrée des titres et panneaux.
+
+Cette extension est réalisée en CSS sans dépendance JavaScript supplémentaire. Une préférence `prefers-reduced-motion: reduce` fige la première phrase et supprime les mouvements. Un titre CMS librement personnalisé reste affiché tel quel. Les contrôles locaux ont couvert les trois positions de la ligne à 390 et 1440 px, les largeurs 320/390/768/1440 px, sept familles de pages intérieures, 32 vues de parcours avec menu/formulaire/filtre et 20 vues axe-core sans violation automatisable. La recette DEV et la mesure de performance de cette extension sont consignées après livraison.
+
 ### Révision visuelle après retour du commanditaire
 
 Le premier rendu a été jugé trop neutre. Après examen de [la référence indiquée](https://enzonaute.me/), l'accueil a été repris avec un titre plus direct, une typographie beaucoup plus présente, une illustration réseau originale, un index des services en mouvement et une alternance de sections ivoire, bleu et bleu nuit. Les entrées, les survols et le défilement sont animés ; `prefers-reduced-motion` supprime ces effets. Les contenus, prix, contacts et parcours métier restent fondés sur les mêmes sources.

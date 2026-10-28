@@ -102,8 +102,9 @@
 - **Refonte professionnelle Zachary IT (DEV 2026-10-28, pas PROD)** : la branche
   `codex/zachary-it-refonte-ready` conserve les hotfixes d'`origin/main`.
   Après refus du premier rendu trop neutre, la direction visuelle actuelle
-  s'inspire du rythme animé d'enzonaute.me : héros partagé, sections expressives,
-  View Timelines et mouvement réduit. WebPortal DEV, contenus CMS via BFF, audit argumenté, charte, captures et
+  s'inspire du rythme animé d'enzonaute.me : héros partagé, ligne de titre
+  cyclique issue d'un film fourni, sections expressives, View Timelines et
+  mouvement réduit. WebPortal DEV, contenus CMS via BFF, audit argumenté, charte, captures et
   recette responsive/accessibilité/performance :
   [site-refonte-professionnelle-2026-10-28.md](topics/site-refonte-professionnelle-2026-10-28.md)
   et `docs/rapport-refonte-site.md`. L'API DEV n'a pas été redémarrée à cause

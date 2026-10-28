@@ -18,11 +18,15 @@ Le composant `VitrineHero` sert la même composition avec et sans mise en page C
 
 Le titre, les actions et l'illustration entrent avec des translations courtes. Trois petits signaux pulsent près de l'illustration. L'index des services défile lentement en continu et s'arrête au survol. Les lignes de services réagissent au survol et au focus ; les sections avancent légèrement au défilement avec les CSS View Timelines lorsque le navigateur les prend en charge. Si cette API n'existe pas, les contenus restent visibles et les parcours fonctionnent sans JavaScript supplémentaire.
 
-Les animations ne font varier l'opacité d'aucun texte : le premier passage d'axe-core a montré que cet effet diminuait temporairement le contraste. `prefers-reduced-motion: reduce` désactive les animations et transitions de la vitrine. Les composants administrateur et client ne reçoivent pas d'animation de défilement.
+L'enregistrement mobile fourni par le commanditaire montre surtout une **seconde ligne de titre qui change par séquences dans une fenêtre masquée**. Cette mécanique est reprise dans le héros d'accueil : « Votre informatique » reste fixe, tandis que « suit votre activité », « sécurise vos accès » et « relie vos équipes » se succèdent. Ces trois formulations correspondent aux prestations existantes. La hauteur de la fenêtre est réservée, les phrases ont des emplacements identiques et le retour à la première phrase est continu : le contenu suivant ne saute pas à chaque changement. Le H1 garde un nom accessible stable, « Votre informatique suit votre activité. » ; les variantes visuelles sont masquées aux technologies d'assistance.
+
+La même grammaire de mouvement s'applique aux titres de toutes les pages publiques : arrivée des H1 au chargement, translation des H2/H3 et des contenus commerciaux au défilement, puis réponses au survol des actions. La connexion et les espaces client/admin reçoivent seulement une entrée brève des titres et panneaux ; les valeurs et formulaires ne tournent pas en boucle. Un titre CMS personnalisé reste statique et garde son texte exact.
+
+Les animations ne font varier l'opacité d'aucun texte : le premier passage d'axe-core a montré que cet effet diminuait temporairement le contraste. `prefers-reduced-motion: reduce` laisse la première phrase du héros visible et désactive le cycle, les translations et les transitions. Les composants administrateur et client ne reçoivent pas d'animation de défilement.
 
 ## Responsive et parcours
 
-À 820 px, le héros, les sections et les zones à deux colonnes se replient. À 600 px, les deux actions du héros occupent la largeur disponible, les prestations et les offres deviennent des listes lisibles, tandis que l'index des domaines reste sur une ligne défilante. Le contenu n'est jamais caché pour créer une apparition. L'absence de débordement global a été contrôlée à 320, 390, 768 et 1440 px.
+À 820 px, le héros, les sections et les zones à deux colonnes se replient. À 600 px, les deux actions du héros occupent la largeur disponible, les prestations et les offres deviennent des listes lisibles, tandis que l'index des domaines reste sur une ligne défilante. La première ligne du titre cyclique reste entière même à 320 px et chaque variante tient dans la largeur réservée. Le contenu structurel n'est jamais caché pour créer une apparition. L'absence de débordement global a été contrôlée à 320, 390, 768 et 1440 px.
 
 L'accueil garde ses routes réelles vers Services, Offres, Tarifs, Diagnostic et Contact. Les titres CMS édités librement gardent la priorité ; seuls les libellés historiques exacts et le titre par défaut de la première refonte sont projetés vers la nouvelle version. Le formulaire de contact reste relié au BFF. Le constructeur de pages montre un aperçu statique pour faciliter l'édition. Aucune preuve sociale, statistique, certification ou garantie n'est ajoutée.
 
@@ -32,7 +36,7 @@ L'accueil garde ses routes réelles vers Services, Offres, Tarifs, Diagnostic et
 | --- | --- | --- |
 | Premier écran | Titre très grand, ivoire, bleu cobalt et illustration réseau. | Titre et actions réels, image sans texte ni marque fictive. Le logo SVG existant et le panier réel sont conservés. |
 | Rythme | Alternance claire/sombre, titres forts, index de services. | Sections ivoire, bleu et bleu nuit ; ordre des blocs CMS conservé pour maintenir l'éditeur et la lecture. |
-| Mouvement | Entrée, défilement et états interactifs. | Translations d'entrée, signaux, rail lent et View Timelines ; aucune dépendance d'animation supplémentaire. |
+| Mouvement | Ligne cyclique du film fourni, entrée, défilement et états interactifs. | Trois phrases dans une fenêtre masquée, titres et contenus animés sur les pages publiques, signaux, rail lent et View Timelines ; aucune dépendance d'animation supplémentaire. |
 | Contenu | Prestations concrètes sans chiffres inventés. | Textes existants de la refonte précédente conservés, seul le titre d'accueil devient plus direct. |
 | Mobile | Titre compact, actions empilées et illustration visible. | Contrôles à 320 et 390 px ; aucun débordement global observé dans la recette locale. |
 | Accessibilité | Contraste, focus et mouvement réduit. | Axe-core et `prefers-reduced-motion` contrôlés ; une recette manuelle avec lecteur d'écran reste nécessaire. |
