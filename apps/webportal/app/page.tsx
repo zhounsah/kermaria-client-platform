@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 
@@ -186,7 +187,18 @@ export default async function HomePage() {
               </Link>
             </div>
           </div>
-          <div aria-hidden="true" className="vitrine-hero-media" />
+          <div aria-hidden="true" className="vitrine-hero-media">
+            <Image
+              alt=""
+              fetchPriority="high"
+              height={1024}
+              loading="eager"
+              sizes="(max-width: 820px) 100vw, 50vw"
+              src="/brand/network-office-editorial.webp"
+              unoptimized
+              width={1536}
+            />
+          </div>
         </div>
       </section>
 

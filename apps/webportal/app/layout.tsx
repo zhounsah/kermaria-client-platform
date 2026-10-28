@@ -23,6 +23,7 @@ const inter = localFont({
 const jetbrainsMono = localFont({
   src: "../assets/fonts/jetbrains-mono-latin-variable.woff2",
   display: "swap",
+  preload: false,
   weight: "100 800",
   variable: "--font-jetbrains-mono",
 });

@@ -2,9 +2,11 @@ import { LoadingState } from "@/components/LoadingState";
 
 export default function Loading() {
   return (
-    <LoadingState
-      description="Votre espace client prépare les informations demandées."
-      title="Chargement de votre espace"
-    />
+    <div className="route-loading-shell" style={{ minHeight: "100vh" }}>
+      <LoadingState
+        description="Les informations de cette page sont en cours de récupération."
+        title="Chargement de la page"
+      />
+    </div>
   );
 }
