@@ -96,14 +96,33 @@ export function presentPublicServicesLandingContent(
   return {
     ...content,
     title: content.title === "L'informatique dont votre activité a besoin. Gérée pour vous."
-      ? "Des services pour la maison et le travail."
+      || content.title === "Des services pour la maison et le travail."
+      ? "Des services informatiques pour votre activité"
       : content.title,
     seoTitle: content.seoTitle === "Services IT gérés pour indépendants, associations et TPE"
-      ? "Services informatiques pour particuliers et petites structures"
+      || content.seoTitle === "Services informatiques pour particuliers et petites structures | Zachary IT"
+      ? "Services informatiques pour professionnels et petites structures | Zachary IT"
       : content.seoTitle,
     seoDescription: content.seoDescription === "Messagerie, sauvegarde, accès distant, réseau, hébergement et support : partez de votre problème pour identifier le service IT adapté avec Zachary IT."
-      ? "Messagerie, sauvegarde, accès à distance, réseau et assistance : partez de votre besoin pour trouver une réponse claire avec Zachary IT."
+      || content.seoDescription === "Messagerie, sauvegarde, accès à distance, réseau et assistance : partez de votre besoin pour trouver une réponse claire avec Zachary IT."
+      ? "Maintenance, réseau, sauvegarde, messagerie et accès à distance à Guichen : découvrez les prestations Zachary IT pour votre activité."
       : content.seoDescription,
+    lead: content.lead === "Un problème de messagerie, des données à protéger, un accès distant à organiser, un Wi-Fi instable ou un serveur à maintenir ? Partez de votre besoin : Zachary IT vous oriente vers la solution adaptée."
+      ? "Un poste qui bloque, un Wi-Fi instable ou des fichiers difficiles à retrouver : identifions le problème avant de choisir une solution."
+      : content.lead,
+    faq: content.faq.map((item) => item.question === "À qui s'adressent ces services ?"
+      && item.answer === "Aux particuliers, associations, indépendants et petites entreprises qui souhaitent une aide claire et suivie."
+      ? { ...item, answer: "Aux professionnels, indépendants, associations et petites structures qui ont besoin d'un périmètre d'intervention clair." }
+      : item),
+    relatedLinks: content.relatedLinks.map((link) => ({
+      ...link,
+      label: ({
+        "Cloud & Hébergement": "Hébergement & services en ligne",
+        "Domaines & Messagerie": "Domaines & messagerie",
+        "Réseau & Sécurité": "Réseau & sécurité",
+        "Support & IT": "Assistance & maintenance",
+      } as Record<string, string>)[link.label] ?? link.label,
+    })),
     sections: content.sections.map((section) => section.heading === "Des services modulaires, pas un catalogue figé"
       && section.bodyMarkdown === "Vous pouvez confier une brique précise ou un ensemble cohérent. Le périmètre est défini selon votre besoin, l'existant et les dépendances utiles ; les prestations nécessitant une étude restent traitées sur devis."
       ? DEFAULT_STOREFRONT_SERVICES_SECTIONS[0] : section),
@@ -123,7 +142,7 @@ export const DEFAULT_STOREFRONT_SERVICES_CATEGORY_LINKS: readonly StorefrontLink
   { label: "Assistance & maintenance", href: "/services/support-it" },
 ];
 export const DEFAULT_STOREFRONT_SERVICES_LEAD =
-  "Un problème de messagerie, des données à protéger, un accès distant à organiser, un Wi-Fi instable ou un serveur à maintenir ? Partez de votre besoin : Zachary IT vous oriente vers la solution adaptée.";
+  "Un poste qui bloque, un Wi-Fi instable ou des fichiers difficiles à retrouver : identifions le problème avant de choisir une solution.";
 
 export const DEFAULT_STOREFRONT_SERVICES_SEO_DESCRIPTION =
   "Messagerie, sauvegarde, accès distant, réseau, hébergement et support : partez de votre problème pour identifier le service IT adapté avec Zachary IT.";

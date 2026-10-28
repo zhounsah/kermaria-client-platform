@@ -130,14 +130,9 @@ export function PublicPriorityServicePage({
         <ServiceBreadcrumb items={breadcrumbItems} />
         <section className="service-hero storefront-priority-hero">
           <div>
-            <div className="storefront-priority-meta">
-              <span className="card-kicker">{"Service g\u00e9r\u00e9"}</span>
-              <span className="storefront-commercial-badge">
-                {COMMERCIAL_MODE_LABELS[commercialActions.mode]}
-              </span>
-            </div>
             <h1>{content.title}</h1>
             <p>{content.lead}</p>
+            <p className="storefront-priority-status">{COMMERCIAL_MODE_LABELS[commercialActions.mode]}</p>
           </div>
           <div className="button-row storefront-action-row">
             <Link className="button" href={primaryAction.href}>{primaryAction.label}</Link>
@@ -164,7 +159,6 @@ export function PublicPriorityServicePage({
         {tariffSection ? (
           <section className="storefront-priority-commercial" aria-labelledby="storefront-priority-commercial-title">
             <div>
-              <span className="card-kicker">{"Prochaine \u00e9tape"}</span>
               <h2 id="storefront-priority-commercial-title">{guidance.title}</h2>
               <p className="storefront-priority-commercial-copy">{guidance.body}</p>
             </div>
@@ -180,7 +174,6 @@ export function PublicPriorityServicePage({
         ) : null}
         <section className="service-section storefront-faq" aria-labelledby="storefront-faq-title">
           <header className="service-section-heading">
-            <span className="card-kicker">{"Avant de vous d\u00e9cider"}</span>
             <h2 id="storefront-faq-title">{"Questions fr\u00e9quentes"}</h2>
           </header>
           <div className="storefront-faq-grid">
@@ -194,7 +187,6 @@ export function PublicPriorityServicePage({
         </section>
         <section className="service-category-proof storefront-related" aria-labelledby="storefront-related-title">
           <div>
-            <span className="card-kicker">Pour aller plus loin</span>
             <h2 id="storefront-related-title">{"Services associ\u00e9s"}</h2>
             <p>{"Découvrez les services qui peuvent compléter cette solution selon votre besoin."}</p>
           </div>

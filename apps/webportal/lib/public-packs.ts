@@ -45,6 +45,26 @@ export type PublicPackView = {
   currency: string;
 };
 
+/** Projection exacte de l'ancien éditorial publié, sans toucher aux prix ni aux
+ * personnalisations du catalogue administrable. */
+export function presentPublicPackCatalogContent(content: PublicPackCatalogContent): PublicPackCatalogContent {
+  return {
+    ...content,
+    pageEyebrow: content.pageEyebrow === "Catalogue des offres" ? "" : content.pageEyebrow,
+    pageTitle: content.pageTitle === "Des offres simples pour sauvegarder, stocker et reprendre plus vite"
+      || content.pageTitle === "Des offres simples, lisibles et prêtes à activer"
+      ? "Des offres pour protéger vos données et organiser l'accès à vos outils" : content.pageTitle,
+    pageDescription: content.pageDescription === "Comparez les offres destinées à protéger vos documents importants, vos sauvegardes et la continuité d'une petite activité à partir de repères clairs."
+      || content.pageDescription === "Comparez les offres, choisissez votre durée d'engagement, puis lancez votre demande à partir d'un périmètre clair."
+      ? "Comparez les services inclus, les options et le point de départ tarifaire avant de configurer l'offre adaptée à votre usage." : content.pageDescription,
+    footnotePrimary: content.footnotePrimary === "Les tarifs affichés sont hors taxes et correspondent au catalogue public actuel. La mise en service et le support sont organisés selon l'offre retenue."
+      ? "Les prix de départ affichés sont calculés par le catalogue actuel. Le montant final dépend des options choisies et est confirmé avant la souscription." : content.footnotePrimary,
+    footnoteSecondary: content.footnoteSecondary === "Besoin d'un dossier de secours numérique ou d'un accompagnement spécifique ? Passez par le formulaire de contact."
+      || content.footnoteSecondary === "Besoin d'un accompagnement spécifique ? Passez par le formulaire de contact."
+      ? "Pour un besoin qui ne correspond pas aux offres publiées, décrivez votre projet dans le formulaire de contact." : content.footnoteSecondary,
+  };
+}
+
 const LEGACY_PUBLIC_PACK_TEXT: Readonly<Record<string, string>> = {
   "La base du dossier sécurisé, enrichie d'un accès VPN personnel et d'une supervision légère.":
     "À vos fichiers et à leur copie de sécurité s'ajoutent un accès privé à distance et un suivi régulier.",

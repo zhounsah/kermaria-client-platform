@@ -58,7 +58,7 @@ assert.deepEqual(
 );
 assert.equal(transitional.sections.length, 1);
 assert.equal(transitional.sections[0].heading, "Une aide adaptée à votre situation");
-assert.match(transitional.lead, /Partez de votre besoin/);
+assert.match(transitional.lead, /identifions le problème/);
 assert.doesNotMatch(JSON.stringify(transitional.sections), /Ce que Zachary IT prend en charge|Choisir le bon point de départ/);
 
 const oldPublicText = {

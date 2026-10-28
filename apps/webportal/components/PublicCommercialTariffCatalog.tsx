@@ -40,8 +40,7 @@ export function PublicCommercialTariffCatalog({
   return (
     <section className="service-section commercial-tariffs" aria-labelledby="commercial-tariffs-title">
       <header className="service-section-heading commercial-tariffs-heading">
-        <span className="card-kicker">Catalogue des services</span>
-        <h2 id="commercial-tariffs-title">Catalogue tarifaire</h2>
+        <h2 id="commercial-tariffs-title">Services et tarifs publiés</h2>
       </header>
 
       {categories.length > 1 ? (

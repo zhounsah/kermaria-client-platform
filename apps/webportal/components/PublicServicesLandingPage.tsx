@@ -44,7 +44,6 @@ export function PublicServicesLandingPage({
         <ServiceBreadcrumb items={breadcrumbItems} />
         <section className="service-hero">
           <div>
-            <span className="card-kicker">Zachary IT</span>
             <h1>{content.title}</h1>
             <p>{content.lead}</p>
           </div>
@@ -60,7 +59,6 @@ export function PublicServicesLandingPage({
           className="service-section service-problem-routing"
         >
           <header className="service-section-heading">
-            <span className="card-kicker">Votre besoin</span>
             <h2 id="services-problems-title">Quel problème cherchez-vous à résoudre ?</h2>
             <p>
               Partez de la situation que vous rencontrez. Chaque entrée vous mène
@@ -88,12 +86,10 @@ export function PublicServicesLandingPage({
           className="service-section service-main-services"
         >
           <header className="service-section-heading">
-            <span className="card-kicker">Domaines d&apos;intervention</span>
-            <h2 id="services-categories-title">Les services Zachary IT</h2>
+            <h2 id="services-categories-title">Les domaines d&apos;intervention</h2>
             <p>
-              Ces quatre familles regroupent les services selon ce qu&apos;ils
-              apportent. Choisissez d&apos;abord votre besoin, puis découvrez
-              les solutions possibles.
+              Assistance, réseau, données et services en ligne : consultez le
+              détail de chaque domaine avant de définir votre demande.
             </p>
           </header>
           <div className="service-category-grid">

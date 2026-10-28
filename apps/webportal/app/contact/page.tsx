@@ -10,9 +10,7 @@ import { resolveSystemSnippets } from "@/lib/system-snippets";
 export const metadata: Metadata = buildPublicMetadata({
   title: "Contact",
   description:
-    "Contactez Zachary IT à Guichen (35) : sauvegarde, messagerie, réseau, "
-    + "hébergement, postes de travail et assistance pour indépendants, "
-    + "associations et petites entreprises.",
+    "Décrivez votre besoin à Zachary IT à Guichen : maintenance, réseau, sauvegarde, messagerie ou accès à distance pour votre activité.",
   path: "/contact",
 });
 

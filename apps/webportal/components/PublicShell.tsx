@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Menu, X } from "lucide-react";
+import { usePathname } from "next/navigation";
 
 import { BrandLogo } from "@/components/BrandLogo";
 import { BillingV2CartHeaderLink } from "@/components/BillingV2CartHeaderLink";
@@ -50,7 +51,7 @@ type PublicShellProps = {
   signupEnabled: boolean;
 };
 
-function ServicesMegaMenu({ onNavigate }: { onNavigate?: () => void }) {
+function ServicesMegaMenu({ onNavigate, active }: { onNavigate?: () => void; active: boolean }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -79,7 +80,7 @@ function ServicesMegaMenu({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div className="public-services-menu" ref={menuRef}>
-      <button aria-controls="public-services-mega-menu" aria-expanded={open} className="public-services-trigger" onClick={() => setOpen((current) => !current)} ref={triggerRef} type="button">
+      <button aria-controls="public-services-mega-menu" aria-expanded={open} className="public-services-trigger" data-active={active || undefined} onClick={() => setOpen((current) => !current)} ref={triggerRef} type="button">
         Services <ChevronDown aria-hidden="true" size={16} strokeWidth={1.9} />
       </button>
       <div aria-label="Services Zachary IT" className={open ? "public-services-mega-menu public-services-mega-menu-open" : "public-services-mega-menu"} hidden={!open} id="public-services-mega-menu" role="group">
@@ -137,6 +138,7 @@ export function PublicShell({
   children,
   signupEnabled,
 }: PublicShellProps) {
+  const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuToggleRef = useRef<HTMLButtonElement>(null);
   const closeMobileMenu = () => setMenuOpen(false);
@@ -164,14 +166,14 @@ export function PublicShell({
           </button>
           <nav aria-label="Navigation principale" className={menuOpen ? "public-header-nav public-header-nav-open" : "public-header-nav"} id="public-header-nav">
             <div className="public-header-links">
-              <div className="public-services-menu-desktop"><ServicesMegaMenu /></div>
+              <div className="public-services-menu-desktop"><ServicesMegaMenu active={pathname.startsWith("/services")} /></div>
               <div className="public-services-menu-mobile"><MobileServicesMenu onNavigate={closeMobileMenu} /></div>
-              {primaryLinks.map((link) => <a href={link.href} key={link.href} onClick={closeMobileMenu}>{link.label}</a>)}
+              {primaryLinks.map((link) => <a aria-current={pathname === link.href ? "page" : undefined} href={link.href} key={link.href} onClick={closeMobileMenu}>{link.label}</a>)}
             </div>
             <div className="public-header-actions">
               <BillingV2CartHeaderLink onNavigate={closeMobileMenu} />
               <Link className="public-header-login" href="/login" onClick={closeMobileMenu}>Espace client</Link>
-              <a className="public-header-primary" href={publicHref("/contact")} onClick={closeMobileMenu}>Parler de mon besoin</a>
+              <a aria-current={pathname === "/contact" ? "page" : undefined} className="public-header-primary" href={publicHref("/contact")} onClick={closeMobileMenu}>Contact</a>
             </div>
           </nav>
         </div>
@@ -183,9 +185,9 @@ export function PublicShell({
           <div className="public-footer-grid">
             <div className="public-footer-brand">
               <BrandLogo className="brand-logo brand-logo-footer" variant="dark" />
-              <p className="public-footer-tagline">Une aide claire pour votre informatique, à la maison comme au travail.</p>
+              <p className="public-footer-tagline">Maintenance, réseau et sauvegarde pour les professionnels et les petites structures.</p>
               <p className="public-footer-company">Zachary HOUNSA-HOUNKPA EI</p>
-              <a className="public-footer-contact" href={publicHref("/contact")}>Parler de mon besoin</a>
+              <a className="public-footer-contact" href={publicHref("/contact")}>Demander un devis</a>
             </div>
 
             <section className="public-footer-column" aria-labelledby="public-footer-services-title">
