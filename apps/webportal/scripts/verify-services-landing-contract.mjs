@@ -173,6 +173,13 @@ assert.match(seed, /problemEntries:/);
 assert.match(seed, /P\("Je dois travailler à distance"/);
 assert.match(seed, /L\("Support & IT", "\/services\/support-it"\)/);
 
+const remoteAccessGuide = await read("app/vpn-ou-bureau-a-distance-que-choisir/page.tsx");
+assert.match(remoteAccessGuide, /VPN ou bureau Windows à distance : que choisir/);
+assert.match(remoteAccessGuide, /href="\/services\/vpn-entreprise"/);
+assert.match(remoteAccessGuide, /href="\/services\/bureau-windows-distance"/);
+assert.match(await read("lib/public-route-config.ts"), /"\/vpn-ou-bureau-a-distance-que-choisir"/);
+assert.match(await read("app/sitemap.ts"), /path: "\/vpn-ou-bureau-a-distance-que-choisir"/);
+
 assert.match(styles, /\.service-overview-grid\.services-problem-grid/);
 assert.match(styles, /@media \(max-width: 820px\)[\s\S]*repeat\(2, minmax\(0, 1fr\)\)/);
 assert.match(styles, /@media \(max-width: 560px\)[\s\S]*services-problem-grid[\s\S]*grid-template-columns: 1fr/);

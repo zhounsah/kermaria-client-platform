@@ -94,7 +94,8 @@ button:disabled { cursor: not-allowed; }
 .vitrine-hero-2026 .button-secondary { border-color: var(--site-ink); color: var(--site-ink); background: transparent; }
 .vitrine-hero-2026 .button-secondary:hover,
 .vitrine-hero-2026 .button-secondary:focus-visible { border-color: var(--site-blue); color: var(--site-blue); background: transparent; }
-.vitrine-hero-media { width: 100%; min-height: 390px; aspect-ratio: 1.5; background: var(--site-soft) url('/brand/network-office-editorial.webp') center / cover no-repeat; }
+.vitrine-hero-media { width: 100%; background: var(--site-soft); }
+.vitrine-hero-media img { display: block; width: 100%; height: auto; aspect-ratio: 3 / 2; object-fit: cover; }
 
 .vitrine-audiences,
 .vitrine-method,
@@ -194,6 +195,25 @@ button:disabled { cursor: not-allowed; }
 .public-main .service-cta .button-secondary:hover { color: var(--site-ink); background: #fff; }
 .public-main .service-category-proof p { color: var(--site-body); }
 
+.compare-guide { width: min(var(--site-content), 100%); margin-inline: auto; }
+.compare-guide-header { max-width: 940px; padding: 0 0 56px; }
+.compare-guide-header h1 { margin: 0 0 22px; font-size: clamp(40px, 4.4vw, 64px); line-height: 1.08; }
+.compare-guide-header p { max-width: 68ch; margin: 0; color: var(--site-body); font-size: 19px; line-height: 1.6; }
+.compare-guide-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 44px; }
+.compare-guide-options section { padding-block: 28px; border-top: 1px solid var(--site-line); }
+.compare-guide-options h2 { margin: 0 0 16px; font-size: clamp(26px, 2.6vw, 36px); }
+.compare-guide-options p { max-width: 60ch; color: var(--site-body); line-height: 1.65; }
+.compare-guide-options a { margin-top: 8px; }
+.compare-guide-questions { display: grid; grid-template-columns: minmax(240px, .8fr) minmax(0, 1.2fr); gap: 60px; padding-block: var(--site-section); border-top: 1px solid var(--site-line); }
+.compare-guide-questions h2 { font-size: clamp(28px, 3vw, 40px); line-height: 1.2; }
+.compare-guide-questions p { color: var(--site-body); }
+.compare-guide-questions ul { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.compare-guide-questions li { padding: 18px 0; border-top: 1px solid var(--site-line); font-weight: 600; }
+.compare-guide-next { display: flex; align-items: center; justify-content: space-between; gap: 32px; padding: 36px; color: #fff; background: var(--site-ink); }
+.compare-guide-next h2 { color: #fff; font-size: 30px; }
+.compare-guide-next p { max-width: 65ch; margin: 0; color: #d3ddec; }
+.compare-guide-next .button { flex: 0 0 auto; }
+
 /* Commercial pages keep server prices and actions but lose repeated tiles. */
 .offres-page { left: auto; width: min(var(--site-content), 100%); overflow-x: clip; transform: none; gap: 54px; }
 .offres-page > *,
@@ -282,6 +302,13 @@ button:disabled { cursor: not-allowed; }
 .app-content .metric-card,
 .app-content .form-card { border-color: var(--site-line); border-radius: var(--site-radius); box-shadow: none; }
 .app-content .button { border-radius: var(--site-radius); }
+.route-loading-shell { width: 100%; padding-top: 24px; }
+.page-builder-live-preview .vitrine-hero-2026 { grid-template-columns: 1fr; min-height: 0; padding: 24px; background: var(--site-white); }
+.page-builder-live-preview .vitrine-hero-2026::before,
+.page-builder-live-preview .vitrine-hero-media { display: none; }
+.page-builder-live-preview .vitrine-hero-2026 .vitrine-hero-copy h1 { color: var(--site-ink); font-size: clamp(26px, 3vw, 36px); }
+.page-builder-live-preview .vitrine-hero-2026 .vitrine-hero-lead { color: var(--site-body); }
+.page-builder-live-preview .vitrine-hero-2026 .button-secondary { border-color: var(--site-ink); color: var(--site-ink); }
 
 @media (max-width: 1100px) {
   .public-header-inner { width: calc(100% - 2 * var(--site-gutter)); }
@@ -295,7 +322,7 @@ button:disabled { cursor: not-allowed; }
 @media (max-width: 820px) {
   .vitrine-hero-2026 { min-height: 0; grid-template-columns: 1fr; gap: 36px; padding-block: 50px; }
   .vitrine-hero-copy { max-width: 700px; }
-  .vitrine-hero-media { min-height: 320px; aspect-ratio: 1.8; }
+  .vitrine-hero-media { min-height: 0; aspect-ratio: auto; }
   .vitrine-services,
   .services-landing-page .service-problem-routing { grid-template-columns: 1fr; gap: 28px; }
   .vitrine-audiences-grid,
@@ -312,6 +339,9 @@ button:disabled { cursor: not-allowed; }
   .contact-page .site-page-widget-contact_form,
   .contact-page .signup-steps-card { grid-column: 1; }
   .contact-page .signup-steps-card { grid-row: auto; margin-top: 40px; padding: 25px 0 0; border-left: 0; border-top: 1px solid var(--site-line); }
+  .compare-guide-options,
+  .compare-guide-questions { grid-template-columns: 1fr; gap: 24px; }
+  .compare-guide-next { align-items: flex-start; flex-direction: column; }
 }
 
 @media (max-width: 600px) {
@@ -323,7 +353,7 @@ button:disabled { cursor: not-allowed; }
   .vitrine-hero-2026 .vitrine-hero-copy h1 { font-size: clamp(36px, 10vw, 48px); }
   .vitrine-hero-2026 .vitrine-hero-actions { display: grid; width: 100%; }
   .vitrine-hero-2026 .vitrine-hero-actions .button { width: 100%; justify-content: center; }
-  .vitrine-hero-media { min-height: 245px; aspect-ratio: 1.35; }
+  .vitrine-hero-media { min-height: 0; aspect-ratio: auto; }
   .vitrine-service-card { grid-template-columns: 1fr; }
   .vitrine-service-card a { grid-column: 1; grid-row: auto; }
   .services-landing-page .services-problem-grid article { grid-template-columns: 1fr; }

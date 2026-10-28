@@ -130,6 +130,14 @@ assert.match(contactForm, /aria-describedby=/);
 assert.match(contactForm, /formuleCode/);
 assert.doesNotMatch(contactForm, /localStorage|sessionStorage|SERVICE_AUTH_TOKEN|INTERNAL_API_URL/);
 
+// Le chargement global apparaît aussi sur la vitrine. Il réserve l'écran pour
+// éviter que le footer entre brièvement dans le viewport avant le vrai contenu.
+const loadingPage = await read("app/loading.tsx");
+assert.match(loadingPage, /minHeight:\s*"100vh"/);
+assert.match(loadingPage, /Chargement de la page/);
+assert.doesNotMatch(loadingPage, /Votre espace client/);
+assert.match(homePage, /fetchPriority="high"/);
+
 for (const [path, key] of [
   ["app/a-propos/page.tsx", "page:a-propos"],
   ["app/infrastructure/page.tsx", "page:infrastructure"],

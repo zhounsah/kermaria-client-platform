@@ -66,7 +66,12 @@ function SitePageBlockView({ block, area, slots, preview, previewLabels }: {
         <div className="vitrine-hero-actions">
           {block.href ? <Link className="button" href={block.href}>{block.label ?? "Découvrir"}</Link> : null}
           {items[0]?.href ? <Link className="button button-secondary" href={items[0].href}>{items[0].title}</Link> : null}
-        </div></div><div aria-hidden="true" className="vitrine-hero-media" style={block.mediaId ? { backgroundImage: `url(/api/site-media/${encodeURIComponent(block.mediaId)})` } : undefined} />
+        </div></div><div aria-hidden="true" className="vitrine-hero-media">
+          <Image alt="" fetchPriority="high" height={1024} loading="eager"
+            sizes="(max-width: 820px) 100vw, 50vw"
+            src={block.mediaId ? `/api/site-media/${encodeURIComponent(block.mediaId)}` : "/brand/network-office-editorial.webp"}
+            unoptimized width={1536} />
+        </div>
     </div></section>;
   if (block.type === "audiences") return <section className="vitrine-audiences vitrine-audiences-first">
     <header className="vitrine-section-header"><h2>{block.title}</h2><p>{block.body}</p></header>
