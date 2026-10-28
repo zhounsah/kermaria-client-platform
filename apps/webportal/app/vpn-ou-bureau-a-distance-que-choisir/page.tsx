@@ -11,7 +11,7 @@ const path = "/vpn-ou-bureau-a-distance-que-choisir";
 export const metadata: Metadata = buildPublicMetadata({
   title: "VPN ou bureau Windows à distance : choisir selon vos usages",
   description: "Accès VPN ou bureau Windows à distance : comprenez ce que chaque solution permet et les points à vérifier pour votre activité avec Zachary IT.",
-  path,
+  path: "/vpn-ou-bureau-a-distance-que-choisir",
 });
 
 export const dynamic = "force-dynamic";

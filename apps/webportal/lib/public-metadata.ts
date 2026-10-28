@@ -42,12 +42,19 @@ export function buildPublicMetadata({
   robots,
   type = "website",
 }: PublicMetadataOptions): Metadata {
+  // Le layout ajoute deja la marque aux pages enfants. Certains contenus CMS
+  // historiques portent eux-memes ce suffixe : le retirer ici evite un titre
+  // HTML « ... | Zachary IT | Zachary IT » sans modifier la valeur stockee.
+  const brandSuffix = ` | ${PUBLIC_BRAND_NAME}`;
+  const pageTitle = title.endsWith(brandSuffix)
+    ? title.slice(0, -brandSuffix.length)
+    : title;
   return {
-    title,
+    title: pageTitle,
     ...(description ? { description } : {}),
     alternates: { canonical: path },
     openGraph: {
-      title,
+      title: pageTitle,
       ...(description ? { description } : {}),
       url: path,
       type,
@@ -56,7 +63,7 @@ export function buildPublicMetadata({
     },
     twitter: {
       card: "summary_large_image",
-      title,
+      title: pageTitle,
       ...(description ? { description } : {}),
     },
     ...(robots ? { robots } : {}),
