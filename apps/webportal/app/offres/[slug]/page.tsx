@@ -50,7 +50,7 @@ export async function generateMetadata({
   }
 
   return buildPublicMetadata({
-    title: `Offre - ${pack.label}`,
+    title: pack.label,
     description: pack.description,
     // `pack.slug` et non le `slug` de l'URL : si un alias de slug est un jour
     // accepte, la canonical continue de pointer la forme unique.

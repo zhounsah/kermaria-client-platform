@@ -42,6 +42,7 @@ export function ContactForm({
   privacyNotice = SYSTEM_SNIPPET_DEFAULTS.contact_form_privacy_notice,
 }: ContactFormProps) {
   const fieldErrorId = (field: FieldName) => `contact-${field}-error`;
+  const formRef = useRef<HTMLFormElement | null>(null);
   const isSubmittingRef = useRef(false);
   // `FormMessage` est annonce par `aria-live`, mais un visiteur au clavier
   // reste sur le bouton d'envoi et ne voit pas forcement le bloc apparaitre
@@ -54,16 +55,35 @@ export function ContactForm({
   const [state, setState] = useState<ContactState>({ status: "idle" });
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
+  function clearFieldError(field: FieldName) {
+    setFieldErrors((current) => ({ ...current, [field]: undefined }));
+    if (state.status === "error") setState({ status: "idle" });
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isSubmittingRef.current) return;
+
+    const validationErrors: FieldErrors = {};
+    if (!name.trim()) validationErrors.name = "Indiquez votre nom ou votre raison sociale.";
+    if (!email.trim()) validationErrors.email = "Indiquez votre adresse e-mail.";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      validationErrors.email = "Indiquez une adresse e-mail valide.";
+    }
+    if (!message.trim()) validationErrors.message = "Décrivez votre demande.";
+    if (Object.keys(validationErrors).length > 0) {
+      setFieldErrors(validationErrors);
+      setState({ status: "error", message: "Corrigez les champs signalés avant l'envoi." });
+      requestAnimationFrame(() => formRef.current?.querySelector<HTMLInputElement | HTMLTextAreaElement>("[aria-invalid='true']")?.focus());
+      return;
+    }
 
     isSubmittingRef.current = true;
     setState({ status: "submitting" });
     setFieldErrors({});
 
     try {
-      const response = await requestBffJson<ContactResponse>(
+      const response = await requestBffJson<ContactResponse, ContactResponse>(
         "/api/contact",
         {
           method: "POST",
@@ -80,11 +100,8 @@ export function ContactForm({
 
       if (!response.ok) {
         const fallbackMessage = response.error.message;
-        const payload = (response as unknown as {
-          payload?: ContactResponse;
-        }).payload;
-        if (payload?.field_errors) {
-          setFieldErrors(payload.field_errors);
+        if (response.details?.field_errors) {
+          setFieldErrors(response.details.field_errors);
         }
         setState({ status: "error", message: fallbackMessage });
         return;
@@ -98,6 +115,8 @@ export function ContactForm({
       setEmail("");
       setSubject(defaultSubject);
       setMessage(defaultMessage);
+    } catch {
+      setState({ status: "error", message: "Le message n'a pas pu être envoyé. Réessayez plus tard." });
     } finally {
       isSubmittingRef.current = false;
       // Apres le rendu du bloc de resultat, pas pendant : `requestAnimationFrame`
@@ -113,6 +132,7 @@ export function ContactForm({
       method="post"
       noValidate
       onSubmit={handleSubmit}
+      ref={formRef}
     >
       {state.status === "success" ? (
         <FormMessage ref={resultRef} title="Message envoyé" tone="success">
@@ -134,7 +154,7 @@ export function ContactForm({
           autoComplete="name"
           maxLength={120}
           name="name"
-          onChange={(event) => setName(event.target.value)}
+          onChange={(event) => { setName(event.target.value); clearFieldError("name"); }}
           required
           type="text"
           value={name}
@@ -154,7 +174,7 @@ export function ContactForm({
           autoComplete="email"
           maxLength={254}
           name="email"
-          onChange={(event) => setEmail(event.target.value)}
+          onChange={(event) => { setEmail(event.target.value); clearFieldError("email"); }}
           required
           type="email"
           value={email}
@@ -175,7 +195,7 @@ export function ContactForm({
           aria-invalid={Boolean(fieldErrors.subject)}
           maxLength={150}
           name="subject"
-          onChange={(event) => setSubject(event.target.value)}
+          onChange={(event) => { setSubject(event.target.value); clearFieldError("subject"); }}
           type="text"
           value={subject}
         />
@@ -195,7 +215,7 @@ export function ContactForm({
           aria-invalid={Boolean(fieldErrors.message)}
           maxLength={5000}
           name="message"
-          onChange={(event) => setMessage(event.target.value)}
+          onChange={(event) => { setMessage(event.target.value); clearFieldError("message"); }}
           required
           rows={7}
           value={message}

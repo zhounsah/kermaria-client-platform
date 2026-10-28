@@ -118,14 +118,14 @@ public sealed partial class SitePageService
                 [
                     new SitePageBlock("back", "widget", WidgetKey: "contact_back"),
                     new SitePageBlock("intro", "contact_intro", "Parlons de votre besoin",
-                        "Décrivez votre situation en quelques lignes : un problème à résoudre, un projet à lancer ou une question à poser. Nous vous aiderons à trouver la prochaine étape."),
+                        "Décrivez la panne, le projet ou la question qui vous amène. Nous vous répondrons pour préciser le périmètre et la suite à donner."),
                     new SitePageBlock("offer", "widget", WidgetKey: "contact_offer"),
                     new SitePageBlock("form", "widget", WidgetKey: "contact_form"),
-                    new SitePageBlock("steps", "contact_steps", "Ce qui se passe ensuite", Items:
+                    new SitePageBlock("steps", "contact_steps", "Après votre message", Items:
                     [
-                        new("Vous envoyez votre message", "Nous recevons votre demande par e-mail.", null),
-                        new("Nous vous répondons", "Nous utilisons l'adresse indiquée pour vous répondre et préciser votre besoin.", null),
-                        new("Nous convenons de la suite", "Si votre demande nécessite une étude, nous vous expliquons les points à vérifier avant de proposer un devis.", null)
+                        new("Nous lisons votre demande", "Votre message nous donne le contexte et les coordonnées pour vous répondre.", null),
+                        new("Nous précisons le besoin", "Nous revenons vers vous si des informations manquent pour comprendre la situation.", null),
+                        new("Nous définissons la suite", "Si une étude est nécessaire, nous précisons ce qu'il faut vérifier avant de proposer un devis.", null)
                     ]),
                     new SitePageBlock("related", "cards", "Vous préférez commencer autrement ?", Items:
                     [
@@ -681,50 +681,49 @@ public sealed partial class SitePageService
         return area == "public" && pageKey == "/"
             ? new(pageKey, area, 0,
             [
-                new SitePageBlock("hero", "hero", "Une informatique fiable, simplement.",
-                    "Dépannage, installation, protection de vos fichiers et conseils : Zachary IT vous accompagne à la maison comme au travail.",
-                    "/services", "Trouver une solution", Items:
-                    [new("Demander un conseil", null, "/contact")]),
-                new SitePageBlock("audiences", "audiences", "Quelle est votre situation ?",
-                    "Choisissez le point de départ qui vous ressemble.", Items:
+                new SitePageBlock("hero", "hero", "L'informatique de votre activité, suivie de près.",
+                    "Maintenance, réseau, sauvegarde et accès à distance pour les professionnels, indépendants et petites structures.",
+                    "/contact", "Demander un devis", Items:
+                    [new("Voir les services", null, "/services")]),
+                new SitePageBlock("audiences", "audiences", "Une aide adaptée à votre organisation",
+                    "La première étape dépend de vos usages, pas d'une formule imposée.", Items:
                     [
-                        new("Particuliers", "Pour retrouver un ordinateur agréable à utiliser, un Wi-Fi fiable et des fichiers importants protégés.", "/services"),
-                        new("Associations", "Pour partager les informations plus facilement et continuer à fonctionner quand un bénévole ou un outil manque.", "/services"),
-                        new("Indépendants et petites entreprises", "Pour travailler sereinement avec des outils suivis, des données protégées et un interlocuteur disponible.", "/services")
+                        new("PME et commerces", "Pour limiter les interruptions sur les postes, le réseau et les outils utilisés chaque jour.", "/services/support-it", "Explorer les services"),
+                        new("Indépendants", "Pour garder l'accès à vos dossiers et à vos échanges, au bureau comme en déplacement.", "/services/sauvegarde-externalisee", "Explorer les services"),
+                        new("Associations et petites structures", "Pour clarifier les accès, la sauvegarde des documents et la continuité des outils partagés.", "/services", "Explorer les services")
                     ]),
-                new SitePageBlock("steps", "steps", "Trois étapes pour définir et mettre en place votre solution.", Items:
+                new SitePageBlock("steps", "steps", "Une intervention qui commence par le bon diagnostic", Items:
                     [
-                        new("Vous nous expliquez votre besoin", "Une question, une panne ou un projet : décrivez simplement votre situation, même si vous ne savez pas quelle solution choisir.", null),
-                        new("Nous proposons une réponse claire", "Vous savez ce qui est prévu, ce que cela coûte et ce qui se passe ensuite avant de prendre une décision.", null),
-                        new("Nous restons à vos côtés", "Une fois la solution mise en place, nous vérifions qu'elle vous convient et restons disponibles si votre besoin évolue.", null)
+                        new("Décrivez la situation", "Dites-nous ce qui bloque, ce qui doit changer et les outils concernés. Il n'est pas nécessaire de choisir une prestation à l'avance.", null),
+                        new("Nous cadrons l'intervention", "Nous précisons le périmètre utile, les dépendances éventuelles et les conditions avant de proposer une intervention ou un devis.", null),
+                        new("Vous gardez une vue claire", "L'intervention, les accès et le suivi prévus sont expliqués pour que vous sachiez ce qui relève de Zachary IT et de vos autres prestataires.", null)
                     ]),
-                new SitePageBlock("services", "services", "De quoi avez-vous besoin ?",
-                    "Partez de votre problème ou de votre projet. Nous vous aiderons à trouver l'offre adaptée, sans avoir à connaître les termes techniques.", Items:
+                new SitePageBlock("services", "services", "Des services pour les problèmes du quotidien",
+                    "Chaque prestation part d'une situation concrète. Consultez son périmètre, puis contactez-nous si plusieurs sujets se recoupent.", Items:
                     [
-                        new("Un réseau qui fonctionne", "Retrouvez une connexion stable à la maison ou au travail, là où vous en avez besoin.", null),
-                        new("Des outils prêts à l'emploi", "Installation, aide à la prise en main et accès à vos outils, y compris à distance lorsque c'est utile.", null),
-                        new("Vos fichiers protégés", "Gardez une copie de vos documents importants et préparez leur récupération en cas de problème.", null),
-                        new("Votre activité en ligne", "Site, adresse e-mail et services en ligne : nous vous aidons à les mettre en place et à les suivre.", null),
-                        new("Une aide quand il faut", "Obtenez une réponse quand un outil bloque, et un suivi pour éviter que les problèmes s'accumulent.", null)
+                        new("Assistance et maintenance informatique", "Un poste ralentit, un logiciel bloque, les demandes s'accumulent : faites le point sur les incidents et l'entretien de vos outils.", "/services/support-it"),
+                        new("Réseau et Wi-Fi professionnel", "Des coupures, des zones mal couvertes ou des accès difficiles à gérer : reprenez la maîtrise de votre réseau.", "/services/reseau-securite"),
+                        new("Sauvegarde et continuité", "Identifiez les données à protéger, la fréquence des copies et la façon de les récupérer en cas d'incident.", "/services/sauvegarde-externalisee"),
+                        new("Accès à distance et serveurs", "Organisez l'accès aux outils hors de vos locaux et l'administration des services qui font tourner votre activité.", "/services/vpn-entreprise")
                     ]),
-                new SitePageBlock("offer", "offer_path", "Choisissez votre prochaine étape",
-                    "Comparez les solutions proposées ou posez votre question directement.", Items:
+                new SitePageBlock("offer", "offer_path", "Quel est votre prochain pas ?",
+                    "Les offres publiées et leurs prix sont détaillés séparément. Pour un besoin particulier, demandez un devis.", Items:
                     [
-                        new("Je veux comparer les offres", "Découvrez à quoi elles servent et ce qu'elles comprennent.", "/offres", "Voir les offres"),
-                        new("Je veux connaître les tarifs", "Consultez les prix affichés et les prestations proposées sur devis.", "/tarifs", "Voir les tarifs"),
-                        new("Je ne sais pas encore", "Quelques questions simples vous aideront à situer votre besoin.", "/diagnostic", "M'orienter")
+                        new("Comparer les offres", "Consultez les configurations publiées et ce qu'elles comprennent.", "/offres", "Voir les offres"),
+                        new("Consulter les tarifs", "Retrouvez les prix affichés et les prestations étudiées sur devis.", "/tarifs", "Voir les tarifs"),
+                        new("Faire le point", "Un questionnaire peut vous aider à décrire vos priorités.", "/diagnostic", "Ouvrir le diagnostic")
                     ]),
-                new SitePageBlock("contact", "final_cta", "Un projet ou une question ? Parlons-en.",
-                    "Expliquez votre besoin en quelques mots. Nous vous répondrons avec une prochaine étape claire, sans vous demander de choisir seul une solution.",
-                    "/contact", "Parler de mon besoin", Items:
-                    [new("Comparer les offres", null, "/offres")])
+                new SitePageBlock("contact", "final_cta", "Parlons de ce qui doit fonctionner chez vous.",
+                    "Expliquez le contexte et les contraintes de votre activité. Nous préciserons ensemble la suite utile avant tout devis.",
+                    "/contact", "Demander un devis", Items:
+                    [new("Voir les offres", null, "/offres")])
             ], null)
             : area == "public" && pageKey == "/footer"
             ? new(pageKey, area, 0,
             [
                 new SitePageBlock("brand", "footer_brand", "Zachary IT",
-                    "Une aide claire pour votre informatique, à la maison comme au travail.",
-                    "/contact", "Parler de mon besoin"),
+                    "Maintenance, réseau et sauvegarde pour les professionnels et les petites structures.",
+                    "/contact", "Demander un devis"),
                 new SitePageBlock("services", "footer_links", "Services", Items:
                 [
                     new("Tous les services", null, "/services"),

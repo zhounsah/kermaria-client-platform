@@ -897,18 +897,18 @@ export function getPublicSitePageLayout(pageKey: string) {
         ["contact_back", "contact_offer", "contact_form"]);
       widgets.blocks.splice(1, 0, {
         id: "intro", type: "contact_intro", title: "Parlons de votre besoin",
-        body: "Décrivez votre situation en quelques lignes : un problème à résoudre, un projet à lancer ou une question à poser. Nous vous aiderons à trouver la prochaine étape.",
+        body: "Décrivez la panne, le projet ou la question qui vous amène. Nous vous répondrons pour préciser le périmètre et la suite à donner.",
         href: null, label: null, mediaId: null, action: null, items: null,
         fields: null, widgetKey: null,
       });
       widgets.blocks.push({
-        id: "steps", type: "contact_steps", title: "Ce qui se passe ensuite",
+        id: "steps", type: "contact_steps", title: "Après votre message",
         body: null, href: null, label: null, mediaId: null, action: null,
         fields: null, widgetKey: null,
         items: [
-          { title: "Vous envoyez votre message", body: "Nous recevons votre demande par e-mail.", href: null, label: null },
-          { title: "Nous vous répondons", body: "Nous utilisons l'adresse indiquée pour vous répondre et préciser votre besoin.", href: null, label: null },
-          { title: "Nous convenons de la suite", body: "Si votre demande nécessite une étude, nous vous expliquons les points à vérifier avant de proposer un devis.", href: null, label: null },
+          { title: "Nous lisons votre demande", body: "Votre message nous donne le contexte et les coordonnées pour vous répondre.", href: null, label: null },
+          { title: "Nous précisons le besoin", body: "Nous revenons vers vous si des informations manquent pour comprendre la situation.", href: null, label: null },
+          { title: "Nous définissons la suite", body: "Si une étude est nécessaire, nous précisons ce qu'il faut vérifier avant de proposer un devis.", href: null, label: null },
         ],
       }, {
         id: "related", type: "cards", title: "Vous préférez commencer autrement ?",

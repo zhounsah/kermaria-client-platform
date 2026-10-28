@@ -1698,14 +1698,14 @@ function createComparisonValue(
 
 export const DEFAULT_PUBLIC_PACK_CATALOG_CONTENT: PublicPackCatalogContentPayload = {
   pageEyebrow: "Catalogue des offres",
-  pageTitle: "Des offres simples pour sauvegarder, stocker et reprendre plus vite",
+  pageTitle: "Des offres pour protéger vos données et organiser l'accès à vos outils",
   pageDescription:
-    "Comparez les offres destinées à protéger vos documents importants, vos sauvegardes et la continuité d'une petite activité à partir de repères clairs.",
+    "Comparez les services inclus, les options et le point de départ tarifaire avant de configurer l'offre adaptée à votre usage.",
   comparisonColumnLabel: "Repères utiles",
   footnotePrimary:
-    "Les tarifs affichés sont hors taxes et correspondent au catalogue public actuel. La mise en service et le support sont organisés selon l'offre retenue.",
+    "Les prix de départ affichés sont calculés par le catalogue actuel. Le montant final dépend des options choisies et est confirmé avant la souscription.",
   footnoteSecondary:
-    "Besoin d'un dossier de secours numérique ou d'un accompagnement spécifique ? Passez par le formulaire de contact.",
+    "Pour un besoin qui ne correspond pas aux offres publiées, décrivez votre projet dans le formulaire de contact.",
   packs: PUBLIC_PACKS.map((pack) => ({
     packCode: pack.key,
     label: pack.label,

@@ -11,6 +11,7 @@ import {
 import { PUBLIC_BRAND_NAME, PUBLIC_SITE_NAME } from "@/lib/public-metadata";
 import { PUBLIC_SITE_URL } from "@/lib/public-route-config";
 import "./globals.css";
+import "./site-refonte.css";
 
 const inter = localFont({
   src: "../assets/fonts/inter-latin-variable.woff2",
@@ -27,9 +28,9 @@ const jetbrainsMono = localFont({
 });
 
 const SITE_TITLE =
-  "Sauvegarde distante et continuité d'activité à Guichen (35)";
+  "Maintenance, réseau et sauvegarde informatique à Guichen (35)";
 const SITE_DESCRIPTION =
-  "Sauvegarde distante, stockage documentaire et continuité d'activité à Guichen pour particuliers, associations et petites entreprises.";
+  "Zachary IT accompagne professionnels, indépendants et petites structures pour la maintenance informatique, le réseau, la sauvegarde et l'accès à distance.";
 
 export async function generateMetadata(): Promise<Metadata> {
   return {

@@ -75,7 +75,6 @@ export function PublicStorefrontPage({
         <ServiceBreadcrumb items={breadcrumbItems} />
         <section className={`service-hero${compactHero ? " service-hero-compact storefront-compact-hero" : ""}`}>
           <div>
-            <span className="card-kicker">Zachary IT</span>
             <h1>{heroTitle ?? content.title}</h1>
             <p>{heroLead ?? content.lead}</p>
           </div>

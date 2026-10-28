@@ -10,11 +10,11 @@ import {
   getPublicSitePageLayout,
 } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
-import { buildPublicPackViews } from "@/lib/public-packs";
+import { buildPublicPackViews, presentPublicPackCatalogContent } from "@/lib/public-packs";
 import { isSignupEnabled } from "@/lib/public-routes";
 
 export const metadata: Metadata = buildPublicMetadata({
-  title: "Offres de sauvegarde et stockage à Guichen",
+  title: "Offres de sauvegarde et de services à Guichen",
   description:
     "Quatre offres conçues pour la sauvegarde distante, le stockage documentaire et la continuité d'activité des particuliers et petites structures.",
   path: "/offres",
@@ -29,7 +29,7 @@ export default async function OffresPage() {
     getPublicSitePageLayout("/offres"),
   ]);
   const catalog = catalogResult.data;
-  const content = contentResult.data;
+  const content = presentPublicPackCatalogContent(contentResult.data);
   const signupEnabled = isSignupEnabled();
   const packs = buildPublicPackViews(catalog, content);
 
@@ -44,12 +44,10 @@ export default async function OffresPage() {
 
     offers_configure: <section className="offres-demo-access" aria-labelledby="offres-formules-title">
         <div>
-          <p className="eyebrow">Nouveau</p>
-          <h2 id="offres-formules-title">Configurer une offre et souscrire en ligne</h2>
+          <h2 id="offres-formules-title">Configurer une offre</h2>
           <p>
-            Quatre offres ajustables — capacité, sauvegarde, accès à
-            distance, utilisateurs — avec le prix mis à jour à chaque
-            changement et la remise d&apos;engagement affichée.
+            Ajustez les options proposées et consultez le prix calculé à chaque
+            étape avant de poursuivre le parcours de souscription.
           </p>
         </div>
         <Link className="button button-primary" href="/formules">
@@ -59,7 +57,6 @@ export default async function OffresPage() {
 
     offers_demo: <section className="offres-demo-access" aria-labelledby="offres-demo-title">
         <div>
-          <p className="eyebrow">Espace client</p>
           <h2 id="offres-demo-title">Voir le portail avant de demander une offre</h2>
           <p>
             La démo montre le parcours client avec des données fictives, sans
@@ -76,12 +73,10 @@ export default async function OffresPage() {
           pour obtenir une proposition adaptée.
         </p> : <section className="offres-overview">
             <div className="offres-section-heading">
-              <h2>Commencez par une vue simple des offres</h2>
+              <h2>Les offres publiées</h2>
               <p>
-                Chaque offre présente son cadre d&apos;usage, sa structure
-                tarifaire et l&apos;action suivante attendue. Le comparatif
-                détaillé reste disponible plus bas pour arbitrer ligne par
-                ligne.
+                Consultez les services inclus et le point de départ tarifaire.
+                Les options et le montant final sont précisés dans le configurateur.
               </p>
             </div>
 
@@ -93,10 +88,10 @@ export default async function OffresPage() {
 
     offers_comparison: packs.length === 0 ? null : <section className="offres-comparison">
             <div className="offres-section-heading">
-              <h2>Comparer les différences utiles</h2>
+              <h2>Comparer les offres en détail</h2>
               <p>
-                Utilisez le comparatif détaillé pour arbitrer entre engagement,
-                paiement, mise en service et niveau de couverture.
+                Retrouvez les différences de couverture, de mise en service et
+                de facturation dans un même tableau.
               </p>
             </div>
 

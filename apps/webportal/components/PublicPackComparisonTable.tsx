@@ -196,19 +196,19 @@ export function PublicPackComparisonTable({
                   >
                     {value.kind === "included" ? (
                       <span
-                        aria-label={`${row.label} inclus`}
                         className="public-pack-value public-pack-value-included"
                         title="Inclus"
                       >
                         <IncludedIcon />
+                        <span className="visually-hidden">Inclus</span>
                       </span>
                     ) : value.kind === "excluded" ? (
                       <span
-                        aria-label={`${row.label} non inclus`}
                         className="public-pack-value public-pack-value-excluded"
                         title="Non inclus"
                       >
                         <ExcludedIcon />
+                        <span className="visually-hidden">Non inclus</span>
                       </span>
                     ) : (
                       <span className="public-pack-value-text">

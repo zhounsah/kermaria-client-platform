@@ -31,11 +31,9 @@ import { getPublicSitePageLayout } from "@/lib/internal-api";
  */
 export const metadata: Metadata = {
   ...buildPublicMetadata({
-    title: "Zachary IT | Informatique, réseau et sauvegarde à Guichen",
+    title: "Zachary IT | Maintenance, réseau et sauvegarde à Guichen",
     description:
-      "Zachary IT à Guichen accompagne particuliers, associations et petites "
-      + "entreprises pour le réseau et le Wi-Fi, les postes, la sauvegarde, "
-      + "l'hébergement, la messagerie et le support informatique.",
+      "Zachary IT accompagne PME, commerces, indépendants et associations à Guichen pour la maintenance informatique, le réseau, la sauvegarde et les accès à distance.",
     path: "/",
   }),
 };
@@ -43,56 +41,59 @@ export const metadata: Metadata = {
 const METHOD_STEPS = [
   {
     number: "01",
-    title: "Vous nous expliquez votre besoin",
-    body: "Une question, une panne ou un projet : décrivez simplement votre situation, même si vous ne savez pas quelle solution choisir.",
+    title: "Décrivez la situation",
+    body: "Dites-nous ce qui bloque, ce qui doit changer et les outils concernés. Il n'est pas nécessaire de choisir une prestation à l'avance.",
   },
   {
     number: "02",
-    title: "Nous proposons une réponse claire",
-    body: "Vous savez ce qui est prévu, ce que cela coûte et ce qui se passe ensuite avant de prendre une décision.",
+    title: "Nous cadrons l'intervention",
+    body: "Nous précisons le périmètre utile, les dépendances éventuelles et les conditions avant de proposer une intervention ou un devis.",
   },
   {
     number: "03",
-    title: "Nous restons à vos côtés",
-    body: "Une fois la solution mise en place, nous vérifions qu'elle vous convient et restons disponibles si votre besoin évolue.",
+    title: "Vous gardez une vue claire",
+    body: "L'intervention, les accès et le suivi prévus sont expliqués pour que vous sachiez ce qui relève de Zachary IT et de vos autres prestataires.",
   },
 ];
 
 const SERVICES = [
   {
-    title: "Un réseau qui fonctionne",
-    body: "Retrouvez une connexion stable à la maison ou au travail, là où vous en avez besoin.",
+    title: "Assistance et maintenance informatique",
+    body: "Un poste ralentit, un logiciel bloque, les demandes s'accumulent : faites le point sur les incidents et l'entretien de vos outils.",
+    href: "/services/support-it",
   },
   {
-    title: "Des outils prêts à l'emploi",
-    body: "Installation, aide à la prise en main et accès à vos outils, y compris à distance lorsque c'est utile.",
+    title: "Réseau et Wi-Fi professionnel",
+    body: "Des coupures, des zones mal couvertes ou des accès difficiles à gérer : reprenez la maîtrise de votre réseau.",
+    href: "/services/reseau-securite",
   },
   {
-    title: "Vos fichiers protégés",
-    body: "Gardez une copie de vos documents importants et préparez leur récupération en cas de problème.",
+    title: "Sauvegarde et continuité",
+    body: "Identifiez les données à protéger, la fréquence des copies et la façon de les récupérer en cas d'incident.",
+    href: "/services/sauvegarde-externalisee",
   },
   {
-    title: "Votre activité en ligne",
-    body: "Site, adresse e-mail et services en ligne : nous vous aidons à les mettre en place et à les suivre.",
-  },
-  {
-    title: "Une aide quand il faut",
-    body: "Obtenez une réponse quand un outil bloque, et un suivi pour éviter que les problèmes s'accumulent.",
+    title: "Accès à distance et serveurs",
+    body: "Organisez l'accès aux outils hors de vos locaux et l'administration des services qui font tourner votre activité.",
+    href: "/services/vpn-entreprise",
   },
 ];
 
 const AUDIENCES = [
   {
-    title: "Particuliers",
-    body: "Pour retrouver un ordinateur agréable à utiliser, un Wi-Fi fiable et des fichiers importants protégés.",
+    title: "PME et commerces",
+    body: "Pour limiter les interruptions sur les postes, le réseau et les outils utilisés chaque jour.",
+    href: "/services/support-it",
   },
   {
-    title: "Associations",
-    body: "Pour partager les informations plus facilement et continuer à fonctionner quand un bénévole ou un outil manque.",
+    title: "Indépendants",
+    body: "Pour garder l'accès à vos dossiers et à vos échanges, au bureau comme en déplacement.",
+    href: "/services/sauvegarde-externalisee",
   },
   {
-    title: "Indépendants et petites entreprises",
-    body: "Pour travailler sereinement avec des outils suivis, des données protégées et un interlocuteur disponible.",
+    title: "Associations et petites structures",
+    body: "Pour clarifier les accès, la sauvegarde des documents et la continuité des outils partagés.",
+    href: "/services",
   },
 ];
 
@@ -171,39 +172,35 @@ export default async function HomePage() {
       <section className="vitrine-hero-band">
         <div className="vitrine-hero vitrine-hero-2026">
           <div className="vitrine-hero-copy">
-            <h1>Une informatique fiable, simplement.</h1>
+            <h1>L&apos;informatique de votre activité, suivie de près.</h1>
             <p className="vitrine-hero-lead">
-              Dépannage, installation, protection de vos fichiers et conseils :
-              Zachary IT vous accompagne à la maison comme au travail.
-            </p>
-            <p className="vitrine-hero-note">
-              À Guichen, vous échangez directement avec la personne qui suit
-              votre demande et vous explique chaque étape.
+              Maintenance, réseau, sauvegarde et accès à distance pour les
+              professionnels, indépendants et petites structures.
             </p>
             <div className="vitrine-hero-actions">
-              <Link className="button" href="/services">
-                Trouver une solution
+              <Link className="button" href="/contact">
+                Demander un devis
               </Link>
-              <Link className="button button-secondary" href="/contact">
-                Demander un conseil
+              <Link className="button button-secondary" href="/services">
+                Voir les services
               </Link>
             </div>
           </div>
-          <div aria-hidden="true" className="vitrine-hero-photo-spacer" />
+          <div aria-hidden="true" className="vitrine-hero-media" />
         </div>
       </section>
 
       <section className="vitrine-audiences vitrine-audiences-first">
         <header className="vitrine-section-header">
-          <h2>Quelle est votre situation ?</h2>
-          <p>Choisissez le point de départ qui vous ressemble.</p>
+          <h2>Une aide adaptée à votre organisation</h2>
+          <p>La première étape dépend de vos usages, pas d&apos;une formule imposée.</p>
         </header>
         <ul className="vitrine-audiences-grid">
           {AUDIENCES.map((audience) => (
             <li key={audience.title} className="vitrine-audience-card">
               <h3>{audience.title}</h3>
               <p>{audience.body}</p>
-              <Link href="/services">Voir les solutions</Link>
+              <Link href={audience.href}>Explorer les services</Link>
             </li>
           ))}
         </ul>
@@ -211,8 +208,7 @@ export default async function HomePage() {
 
       <section className="vitrine-method">
         <header className="vitrine-section-header">
-          <p className="eyebrow">Comment ça marche</p>
-          <h2>Trois étapes pour définir et mettre en place votre solution.</h2>
+          <h2>Une intervention qui commence par le bon diagnostic</h2>
         </header>
         <ol className="vitrine-method-grid">
           {METHOD_STEPS.map((step) => (
@@ -227,10 +223,10 @@ export default async function HomePage() {
 
       <section className="vitrine-services" id="services">
         <header className="vitrine-section-header">
-          <h2>De quoi avez-vous besoin ?</h2>
+          <h2>Des services pour les problèmes du quotidien</h2>
           <p className="vitrine-section-lead">
-            Partez de votre problème ou de votre projet. Nous vous aiderons à
-            trouver l&apos;offre adaptée, sans avoir à connaître les termes techniques.
+            Chaque prestation part d&apos;une situation concrète. Consultez son
+            périmètre, puis contactez-nous si plusieurs sujets se recoupent.
           </p>
         </header>
         <ul className="vitrine-services-grid">
@@ -238,35 +234,36 @@ export default async function HomePage() {
             <li key={service.title} className="vitrine-service-card">
               <h3>{service.title}</h3>
               <p>{service.body}</p>
+              <Link href={service.href}>Voir le service <span aria-hidden="true">→</span></Link>
             </li>
           ))}
         </ul>
       </section>
 
       <section className="vitrine-offer-path">
-        <header className="vitrine-section-header"><h2>Choisissez votre prochaine étape</h2>
-          <p>Comparez les solutions proposées ou posez votre question directement.</p></header>
+        <header className="vitrine-section-header"><h2>Quel est votre prochain pas ?</h2>
+          <p>Les offres publiées et leurs prix sont détaillés séparément. Pour un besoin particulier, demandez un devis.</p></header>
         <div className="vitrine-offer-path-grid">
-          <article><h3>Je veux comparer les offres</h3><p>Découvrez à quoi elles servent et ce qu&apos;elles comprennent.</p><Link href="/offres">Voir les offres</Link></article>
-          <article><h3>Je veux connaître les tarifs</h3><p>Consultez les prix affichés et les prestations proposées sur devis.</p><Link href="/tarifs">Voir les tarifs</Link></article>
-          <article><h3>Je ne sais pas encore</h3><p>Quelques questions simples vous aideront à situer votre besoin.</p><Link href="/diagnostic">M&apos;orienter</Link></article>
+          <article><h3>Comparer les offres</h3><p>Consultez les configurations publiées et ce qu&apos;elles comprennent.</p><Link href="/offres">Voir les offres</Link></article>
+          <article><h3>Consulter les tarifs</h3><p>Retrouvez les prix affichés et les prestations étudiées sur devis.</p><Link href="/tarifs">Voir les tarifs</Link></article>
+          <article><h3>Faire le point</h3><p>Un questionnaire peut vous aider à décrire vos priorités.</p><Link href="/diagnostic">Ouvrir le diagnostic</Link></article>
         </div>
       </section>
 
       <section className="vitrine-cta">
         <div>
-          <h2>Un projet ou une question ? Parlons-en.</h2>
+          <h2>Parlons de ce qui doit fonctionner chez vous.</h2>
           <p>
-            Expliquez votre besoin en quelques mots. Nous vous répondrons avec
-            une prochaine étape claire, sans vous demander de choisir seul une solution.
+            Expliquez le contexte et les contraintes de votre activité. Nous
+            préciserons ensemble la suite utile avant tout devis.
           </p>
         </div>
         <div className="vitrine-hero-actions">
           <Link className="button" href="/contact">
-            Parler de mon besoin
+            Demander un devis
           </Link>
           <Link className="button button-secondary" href="/offres">
-            Comparer les offres
+            Voir les offres
           </Link>
         </div>
       </section>
