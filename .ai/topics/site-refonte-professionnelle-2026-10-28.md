@@ -24,7 +24,7 @@ La branche de revue `codex/zachary-it-refonte-ready` part de `origin/main` à `d
 
 ## Frontière DEV/PROD constatée
 
-Le WebPortal DEV actif est `/opt/kermaria/releases-dev/webportal-dev-zachary-ready-23e15b2` depuis la révision animée ; l'environnement DEV existant a été préservé. Les mises en page accueil/contact/footer et les contenus À propos/Services/Offres ont été publiés par le BFF administrateur avec session et CSRF, sauvegardes JSON et relectures. Aucune migration SQL ni écriture directe MariaDB. L'API DEV n'a pas été redémarrée : sa configuration observée avait BPCE/e-mail live et AD `controlled_write`. La PROD est restée sur `v2.1.1-hotfix.5` ; revalider ces états avant toute autre opération.
+Le WebPortal DEV actif est `/opt/kermaria/releases-dev/webportal-dev-zachary-ready-8ed2c7f` depuis l'ajout de la ligne de titre cyclique ; l'environnement DEV existant a été préservé. Le CMS accueil est à la version 2 après modification du seul titre via BFF admin avec session, CSRF et vérification de version ; les snapshots sont hors Git dans `zachary-it-qa`. Les mises en page contact/footer et les contenus À propos/Services/Offres avaient déjà été publiés par le BFF administrateur avec sauvegardes JSON et relectures. Aucune migration SQL ni écriture directe MariaDB. L'API DEV n'a pas été redémarrée : sa configuration observée avait BPCE/e-mail live et AD `controlled_write`. La PROD est restée sur `v2.1.1-hotfix.5` ; revalider ces états avant toute autre opération.
 
 ## Révision visuelle après retour du commanditaire
 
