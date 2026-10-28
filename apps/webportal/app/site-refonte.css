@@ -302,6 +302,8 @@ button:disabled { cursor: not-allowed; }
 .app-content .metric-card,
 .app-content .form-card { border-color: var(--site-line); border-radius: var(--site-radius); box-shadow: none; }
 .app-content .button { border-radius: var(--site-radius); }
+.page-builder-add label { display: grid; flex: 1 1 180px; gap: 6px; font-weight: 600; }
+.page-builder-live-preview:focus-visible { outline: 3px solid var(--site-focus); outline-offset: 3px; }
 .route-loading-shell { width: 100%; padding-top: 24px; }
 .page-builder-live-preview .vitrine-hero-2026 { grid-template-columns: 1fr; min-height: 0; padding: 24px; background: var(--site-white); }
 .page-builder-live-preview .vitrine-hero-2026::before,
