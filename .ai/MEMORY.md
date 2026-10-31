@@ -12,6 +12,11 @@
 
 ## État courant / informations récentes
 
+### Frontend public PR #1
+
+- La recette du 2026-10-30 sur `codex/zachary-it-refonte-ready` a réduit les animations continues, rendu l'introduction non bloquante, puis donné au rail, à la méthode et aux lignes de services des mouvements courts. Le hub Assistance explique désormais l'intérêt d'un abonnement face à une intervention ponctuelle avec des bénéfices tirés des six formules. Dix scénarios Playwright desktop/mobile et les contrôles web/SEO passent ; la release Web DEV active est `webportal-dev-assistance-value-pr1-20261030`. Les changements restent non commités. Voir [frontend-premium-pr1.md](topics/frontend-premium-pr1.md) et `docs/FRONTEND_PREMIUM_PR1_2026-10-30.md`.
+- Audit local du 31/10/2026 sur ce même worktree : écran d'introduction retiré pour afficher immédiatement le hero et son CTA, fallback d'accueil enrichi, erreurs du rappel diagnostic rendues accessibles. `npm run validate` et la recette Chromium locale passent ; aucune livraison DEV/PROD de ces nouvelles corrections. Voir [zachary-site-audit-2026-10-31.md](topics/zachary-site-audit-2026-10-31.md) et `docs/AUDIT_ZACHARY_IT_2026-10-31.md`.
+
 ### Correctif de présentation Tarifs
 
 - `v2.1.1-hotfix.5` remplace `(montant HT, estimation France)` par
