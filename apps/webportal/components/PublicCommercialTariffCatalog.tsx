@@ -109,7 +109,7 @@ function CommercialTariffCard({
         {service.description ? <p>{service.description}</p> : null}
       </div>
 
-      <PriceSummary service={service} />
+      <PriceSummary assistanceTierCode={assistanceTierCode} service={service} />
 
       {tiers.length > 0 ? (
         <details className="commercial-tariff-tiers">
@@ -175,22 +175,30 @@ function CommercialTariffCard({
 }
 
 function PriceSummary({
+  assistanceTierCode,
   service,
 }: {
+  assistanceTierCode?: string;
   service: PublicCommercialService;
 }) {
-  if (service.priceType === "quote" || !service.startingPrice) {
+  const selectedTier = service.id === ASSISTANCE_SERVICE_CODE
+    ? service.tiers.find((tier) => tier.id === assistanceTierCode && tier.selectable) : null;
+  const price = selectedTier?.recurringPrice ?? service.startingPrice;
+  if (service.priceType === "quote" || !price) {
     return <p className="commercial-tariff-price commercial-tariff-price-quote">Sur devis</p>;
   }
 
-  const prefix = service.priceType === "from" ? "À partir de " : "";
+  const prefix = selectedTier ? `${selectedTier.label} · ` : service.priceType === "from" ? "À partir de " : "";
+  const unit = selectedTier && findAssistanceOffer(selectedTier.id)?.audience === "professionnels"
+    ? "/ poste / mois" : priceUnit(service);
+  const initialFees = [...service.initialFees, ...(selectedTier?.initialFees ?? [])];
   return (
     <div className="commercial-tariff-price-block">
       <p className="commercial-tariff-price">
-        {prefix}{formatMoney(service.startingPrice)} TTC <span>{priceUnit(service)}</span>
+        {prefix}{formatMoney(price)} TTC <span>{unit}</span>
       </p>
-      {frenchNetHint(service.startingPrice)}
-      {service.initialFees.map((fee, index) => (
+      {frenchNetHint(price)}
+      {initialFees.map((fee, index) => (
         <p className="commercial-tariff-fee" key={`fee-${index}`}>
           + {formatMoney(fee)} TTC de frais de mise en service{frenchNetHint(fee)}
         </p>
