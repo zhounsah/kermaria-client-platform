@@ -60,7 +60,7 @@ for (const [label, source] of [
   if (label === "accueil") {
     assert.match(source, /<VitrineHero\b/, "l'accueil doit afficher le héros commun.");
   } else {
-    assert.match(source, /<h1\b/, `${label} doit exposer un H1 explicite.`);
+    assert.match(source, /<(?:h1|AnimatedPublicH1)\b/, `${label} doit exposer un H1 explicite.`);
   }
 }
 assert.match(vitrineHero, /<h1\b/, "le héros commun doit exposer un H1 explicite.");
@@ -68,7 +68,7 @@ assert.match(sitePageFrame, /block\.type === "hero"[\s\S]{0,100}<VitrineHero/, "
 assert.match(contactPage, /buildPublicMetadata\(/, "contact doit utiliser le helper SEO public.");
 assert.match(contactPage, /pageKey="\/contact"/, "contact doit utiliser sa mise en page publiée.");
 assert.match(sitePageFrame,
-  /block\.type === "contact_intro"[\s\S]{0,300}<h1>\{block\.title\}<\/h1>/,
+  /block\.type === "contact_intro"[\s\S]{0,350}<AnimatedPublicH1 text=\{block\.title \?\? ""\}/,
   "le titre éditable du contact doit rester un H1 explicite.");
 
 assert.match(publicMetadata, /alternates:\s*\{\s*canonical:\s*path\s*\}/);
@@ -172,7 +172,7 @@ for (const path of [
 }
 
 assert.match(notFoundPage, /robots:\s*\{\s*index:\s*false,\s*follow:\s*false\s*\}/);
-assert.match(notFoundPage, /<h1 id="not-found-title">/);
+assert.match(notFoundPage, /<AnimatedPublicH1 id="not-found-title"/);
 assert.match(notFoundPage, /href="\/offres"/);
 assert.match(notFoundPage, /href="\/contact"/);
 

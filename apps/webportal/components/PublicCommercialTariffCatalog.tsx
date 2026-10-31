@@ -9,6 +9,7 @@ import type {
 } from "@kermaria/shared";
 
 import { BillingV2DirectCartAdd } from "@/components/BillingV2DirectCartAdd";
+import { ASSISTANCE_SERVICE_CODE, assistanceContactHref, findAssistanceOffer, orderAssistanceTiers } from "@/lib/assistance-offers";
 
 type PublicCommercialTariffCatalogProps = {
   catalog: PublicCommercialCatalog;
@@ -94,6 +95,8 @@ function CommercialTariffCard({
   currency: string;
   service: PublicCommercialService;
 }) {
+  const assistance = service.id === ASSISTANCE_SERVICE_CODE;
+  const tiers = assistance ? orderAssistanceTiers(service.tiers.filter((tier) => tier.selectable)) : service.tiers;
   return (
     <article className="commercial-tariff-card">
       <div className="commercial-tariff-card-heading">
@@ -103,23 +106,26 @@ function CommercialTariffCard({
 
       <PriceSummary service={service} />
 
-      {service.tiers.length > 0 ? (
+      {tiers.length > 0 ? (
         <details className="commercial-tariff-tiers">
           <summary>Voir les options disponibles</summary>
           <ul>
-            {service.tiers.map((tier) => (
+            {tiers.map((tier) => (
               <li key={tier.id}>
                 <span>
                   <strong>{tier.label}</strong>
                   {tier.description ? ` — ${tier.description}` : ""}
                   {tier.details.length > 0 ? ` (${tier.details.join(", ")})` : ""}
                 </span>
-                <span>{tier.recurringPrice ? <>{formatMoney(tier.recurringPrice)} TTC / mois{frenchNetHint(tier.recurringPrice)}</> : "Sur devis"}</span>
+                <span>{tier.recurringPrice ? <>{formatMoney(tier.recurringPrice)} TTC {assistance && findAssistanceOffer(tier.id)?.audience === "professionnels" ? "/ poste / mois" : "/ mois"}{frenchNetHint(tier.recurringPrice)}</> : "Sur devis"}</span>
                 {tier.initialFees.map((fee, index) => (
                   <span className="commercial-tariff-tier-fee" key={`${tier.id}-fee-${index}`}>
                     + {formatMoney(fee)} TTC de mise en service{frenchNetHint(fee)}
                   </span>
                 ))}
+                {assistance && service.orderingMode === "quote" && findAssistanceOffer(tier.id) ? (
+                  <Link href={assistanceContactHref(findAssistanceOffer(tier.id)!)}>Demander un devis pour {tier.label}</Link>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -127,7 +133,7 @@ function CommercialTariffCard({
       ) : null}
 
       {service.initialFees.length === 0
-        && service.tiers.some((tier) => tier.initialFees.length > 0) ? (
+        && tiers.some((tier) => tier.initialFees.length > 0) ? (
           <p className="commercial-tariff-tier-fee-notice">
             Des frais de mise en service s’appliquent selon le palier choisi.
           </p>
@@ -143,7 +149,10 @@ function CommercialTariffCard({
             <BillingV2DirectCartAdd currency={currency} service={service} />
           </div>
         ) : (
-          <Link className="button" href={service.primaryCta.href}>{service.primaryCta.label}</Link>
+          <Link
+            className="button"
+            href={assistance && service.orderingMode === "quote" ? "/assistance-maintenance" : service.primaryCta.href}
+          >{assistance && service.orderingMode === "quote" ? "Comparer les formules" : service.primaryCta.label}</Link>
         )}
         {service.secondaryCta ? (
           <Link className="service-inline-link" href={service.secondaryCta.href}>

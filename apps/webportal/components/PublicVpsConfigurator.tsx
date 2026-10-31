@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 import {
   useCallback,
   useEffect,
@@ -349,7 +350,7 @@ export function PublicVpsConfigurator({ selection, cgvVersionLabel }: Props) {
 
       <header className="vps-configurator-hero">
         <p className="card-kicker">Préparation de votre VPS</p>
-        <h1>Configurez votre VPS</h1>
+        <AnimatedPublicH1 text="Configurez votre VPS" />
         <p>
           Vérifiez votre offre, décrivez votre besoin technique, puis relisez le
           récapitulatif avant l’ouverture de la commande.

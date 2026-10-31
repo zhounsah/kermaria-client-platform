@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 import { SitePageFrame } from "@/components/SitePageFrame";
 import { getPublicSitePageLayout } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
@@ -23,7 +24,7 @@ export default async function DataRequestInformationPage() {
     <SitePageFrame area="public" pageKey="/demander-mes-donnees"
       initialLayout={layout.data} slots={{ data_rights_actions: actions }}>
     <header className="data-request-intro">
-      <h1>Vos données, vos choix</h1>
+      <AnimatedPublicH1 text="Vos données, vos choix" />
       <p>Vous pouvez demander à consulter, corriger ou supprimer les données personnelles qui vous concernent, ainsi qu’exercer vos autres droits.</p>
       {actions}
     </header>

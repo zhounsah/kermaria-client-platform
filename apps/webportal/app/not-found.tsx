@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 
 export const metadata: Metadata = {
   title: "Page introuvable",
@@ -10,7 +11,7 @@ export default function NotFound() {
   return (
     <section className="not-found-page" aria-labelledby="not-found-title">
       <p className="eyebrow">Erreur 404</p>
-      <h1 id="not-found-title">Page introuvable</h1>
+      <AnimatedPublicH1 id="not-found-title" text="Page introuvable" />
       <p>
         Cette adresse ne correspond à aucune page publique disponible. Vous
         pouvez revenir aux offres ou expliquer votre besoin directement.

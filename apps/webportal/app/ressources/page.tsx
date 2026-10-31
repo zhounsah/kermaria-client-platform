@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 
 import { ErrorState } from "@/components/ErrorState";
 import { ServiceCTA } from "@/components/PublicServiceComponents";
@@ -76,7 +77,7 @@ export default async function RessourcesPage() {
     <div className="seo-hub-page">
       <header className="seo-hub-header">
         <p className="eyebrow">Ressources</p>
-        <h1>Guides et conseils informatiques</h1>
+        <AnimatedPublicH1 text="Guides et conseils informatiques" />
         <p>
           Des repères pratiques pour comprendre les problèmes informatiques
           courants, vérifier les points importants et choisir une solution

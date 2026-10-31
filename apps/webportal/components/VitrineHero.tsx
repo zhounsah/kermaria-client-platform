@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { LetterWave } from "@/components/AnimatedPublicH1";
 
 type HeroAction = { href: string; label: string };
 
@@ -13,17 +14,17 @@ const rotatingPhrases = [
 function HeroTitle({ title }: { title: string }) {
   if (title === "Votre informatique suit votre activité.") {
     return <span aria-hidden="true" className="hero-kinetic-visible">
-      <span className="hero-kinetic-fixed">Votre informatique</span>
+      <span className="hero-kinetic-fixed"><LetterWave text="Votre informatique" /></span>
       <span className="hero-kinetic-window">
         <span className="hero-kinetic-track">
           {[...rotatingPhrases, rotatingPhrases[0]].map((phrase, index) =>
-            <span className="hero-kinetic-phrase" key={`${phrase}-${index}`}>{phrase}</span>)}
+            <span className="hero-kinetic-phrase" key={`${phrase}-${index}`}><LetterWave text={phrase} /></span>)}
         </span>
       </span>
     </span>;
   }
 
-  return <>{title}</>;
+  return <LetterWave text={title} />;
 }
 
 export function VitrineHero({
@@ -43,7 +44,7 @@ export function VitrineHero({
     <div className="vitrine-hero vitrine-hero-2026">
       <div className="vitrine-hero-copy">
         <p className="vitrine-hero-overline">Zachary IT · Informatique professionnelle</p>
-        <h1 aria-label={title === "Votre informatique suit votre activité." ? title : undefined}>
+        <h1 aria-label={title}>
           <HeroTitle title={title} />
         </h1>
         <p className="vitrine-hero-lead">{body}</p>
@@ -65,7 +66,6 @@ export function VitrineHero({
     <div className="vitrine-service-rail">
       <div className="vitrine-service-rail-track">
         {serviceRail.map((service) => <span key={service}>{service}</span>)}
-        {serviceRail.map((service) => <span aria-hidden="true" key={`repeat-${service}`}>{service}</span>)}
       </div>
     </div>
   </section>;

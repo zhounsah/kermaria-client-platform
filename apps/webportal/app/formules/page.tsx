@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 import { SitePageFrame } from "@/components/SitePageFrame";
 
 import { formatCurrencyFromCents } from "@/lib/formatters";
@@ -41,7 +42,7 @@ export default async function FormulesPage() {
   const slots = {
     formules_intro: <header className="formules-header formules-header-2026">
         <p className="eyebrow">Offres</p>
-        <h1>Choisissez une offre, ajustez-la, souscrivez.</h1>
+        <AnimatedPublicH1 text="Choisissez une offre, ajustez-la, souscrivez." />
         <p className="formules-lead">
           Chaque offre part d&apos;une configuration recommandée que vous
           pouvez ajuster : capacité de stockage, sauvegarde, accès à distance,

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 
 import { ErrorState } from "@/components/ErrorState";
 import { getPublicWikiHome, searchPublicWiki } from "@/lib/internal-api";
@@ -49,7 +50,7 @@ export default async function WikiHomePage({
     <div className="wiki-page">
       <header className="wiki-header">
         <p className="eyebrow">Centre d&apos;aide</p>
-        <h1>Wiki Zachary IT</h1>
+        <AnimatedPublicH1 text="Wiki Zachary IT" />
         <form className="wiki-search" action="/wiki">
           <label htmlFor="wiki-q">Rechercher</label>
           <div className="wiki-search-row">

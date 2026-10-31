@@ -2508,6 +2508,9 @@ export interface BillingV2PublicService {
    * son absence est interprétée de façon fermée par le portail.
    */
   cartDirectEligible?: boolean;
+  /** Bornes de quantité pour une sélection directe, issues du catalogue. */
+  directMinimumQuantity?: number;
+  directMaximumQuantity?: number;
 }
 
 export interface BillingV2PublicPresetItem {
@@ -2603,6 +2606,9 @@ export type PublicCommercialCta = {
 export type PublicCommercialService = {
   /** Identifiant stable Billing V2, jamais affiche comme vocabulaire client. */
   id: string;
+  /** Bornes de quantité directe publiées par Billing V2. */
+  directMinimumQuantity?: number;
+  directMaximumQuantity?: number;
   slug: string;
   name: string;
   /** Libellé du contrôle de tier, jamais déduit d'un code de service côté UI. */

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 
 import { ServiceBreadcrumb } from "@/components/PublicServiceComponents";
 import { buildPublicMetadata } from "@/lib/public-metadata";
@@ -28,7 +29,7 @@ export default function RemoteAccessComparisonPage() {
       <article className="compare-guide">
         <ServiceBreadcrumb items={breadcrumb} />
         <header className="compare-guide-header">
-          <h1>VPN ou bureau Windows à distance : que choisir ?</h1>
+          <AnimatedPublicH1 text="VPN ou bureau Windows à distance : que choisir ?" />
           <p>
             Ces deux solutions permettent de travailler hors des locaux, mais
             elles ne donnent pas accès aux outils de la même manière. Le bon

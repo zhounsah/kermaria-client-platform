@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { CmsConfigurableForm } from "@/components/CmsConfigurableForm";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 import { VitrineHero } from "@/components/VitrineHero";
 import { requestBffJson } from "@/lib/client-api";
 import { presentPublicSiteLayout } from "@/lib/public-site-editorial";
@@ -97,7 +98,7 @@ function SitePageBlockView({ block, area, slots, preview, previewLabels }: {
   </section>;
   if (block.type === "diagnostic_intro") return <header className="diagnostic-header">
     <div className="diagnostic-header-copy"><span aria-hidden="true" className="diagnostic-header-icon">✓</span>
-      <div><p className="eyebrow">Trouver ma solution</p><h1>{block.title}</h1><p>{block.body}</p></div>
+      <div><p className="eyebrow">Trouver ma solution</p>{preview ? <h1>{block.title}</h1> : <AnimatedPublicH1 text={block.title ?? ""} />}<p>{block.body}</p></div>
     </div>
     <div aria-label="Fonctionnement" className="diagnostic-benefits">
       {items.map((item, index) => <article key={`${item.title}-${index}`}>
@@ -107,11 +108,11 @@ function SitePageBlockView({ block, area, slots, preview, previewLabels }: {
     </div>
   </header>;
   if (block.type === "contact_intro") return <header className="contact-header">
-    <p className="eyebrow">Contact</p><h1>{block.title}</h1>
+    <p className="eyebrow">Contact</p>{preview ? <h1>{block.title}</h1> : <AnimatedPublicH1 text={block.title ?? ""} />}
     <p className="contact-lead">{block.body}</p>
   </header>;
   if (block.type === "data_rights_intro") return <header className="data-request-intro">
-    <h1>{block.title}</h1><p>{block.body}</p>
+    {preview ? <h1>{block.title}</h1> : <AnimatedPublicH1 text={block.title ?? ""} />}<p>{block.body}</p>
   </header>;
   if (block.type === "contact_steps") return <section aria-labelledby={`contact-steps-${block.id}`} className="signup-steps-card">
     <h2 id={`contact-steps-${block.id}`}>{block.title}</h2>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 import { SitePageFrame } from "@/components/SitePageFrame";
 
 import { PublicPackComparisonTable } from "@/components/PublicPackComparisonTable";
@@ -38,7 +39,7 @@ export default async function OffresPage() {
         {content.pageEyebrow.trim() ? (
           <p className="eyebrow">{content.pageEyebrow}</p>
         ) : null}
-        <h1>{content.pageTitle}</h1>
+        <AnimatedPublicH1 text={content.pageTitle} />
         <p className="offres-lead">{content.pageDescription}</p>
       </header>,
 

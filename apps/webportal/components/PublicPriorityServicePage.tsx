@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 import { ManagedMarkdown } from "@/components/ManagedMarkdown";
 import { ServiceBreadcrumb } from "@/components/PublicServiceComponents";
 import {
@@ -130,7 +131,7 @@ export function PublicPriorityServicePage({
         <ServiceBreadcrumb items={breadcrumbItems} />
         <section className="service-hero storefront-priority-hero">
           <div>
-            <h1>{content.title}</h1>
+            <AnimatedPublicH1 text={content.title} />
             <p>{content.lead}</p>
             <p className="storefront-priority-status">{COMMERCIAL_MODE_LABELS[commercialActions.mode]}</p>
           </div>

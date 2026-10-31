@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { ErrorState } from "@/components/ErrorState";
 import { PublicCommercialTariffCatalog } from "@/components/PublicCommercialTariffCatalog";
@@ -57,10 +58,10 @@ export default async function TarifsPage() {
       <PublicStorefrontPage
         breadcrumbItems={resolveStorefrontBreadcrumb("/tarifs")!}
         beforeSections={(
-          <PublicCommercialTariffCatalog
+          <><section className="service-section"><h2>Assistance &amp; maintenance</h2><p>Découvrez les abonnements pour particuliers et professionnels.</p><Link className="button button-secondary" href="/assistance-maintenance">Voir les abonnements</Link></section><PublicCommercialTariffCatalog
             catalog={buildPublicCommercialCatalog(billingCatalogResult.data)}
             currency={billingCatalogResult.data.currency}
-          />
+          /></>
         )}
         compactHero
         content={content}

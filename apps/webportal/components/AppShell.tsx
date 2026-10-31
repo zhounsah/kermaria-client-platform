@@ -68,7 +68,9 @@ export function AppShell({
   const pageKey = FORMULA_DETAIL_PATH.test(pathname)
     ? "/formules/[code]" : OFFER_DETAIL_PATH.test(pathname)
       ? "/offres/[slug]" : pathname.replace(UUID_PATH_PART, "/[id]");
-  const hasOwnPageLayout = COMPOSABLE_WIDGET_PAGE_KEYS.has(pageKey);
+  const hasOwnPageLayout = pathname === "/" || COMPOSABLE_WIDGET_PAGE_KEYS.has(pageKey)
+    || pathname === "/assistance-maintenance"
+    || pathname.startsWith("/assistance-maintenance/");
   const [session, setSession] = useState<InternalSession | null>(null);
   const [sidebarState, setSidebarState] = useState({ path: "", open: false });
   const sidebarOpen = sidebarState.path === pathname && sidebarState.open;

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 import type { SitePageLayout } from "@kermaria/shared";
 
 import { ManagedMarkdown } from "@/components/ManagedMarkdown";
@@ -44,7 +45,7 @@ export function PublicServicesLandingPage({
         <ServiceBreadcrumb items={breadcrumbItems} />
         <section className="service-hero">
           <div>
-            <h1>{content.title}</h1>
+            <AnimatedPublicH1 text={content.title} />
             <p>{content.lead}</p>
           </div>
           <div className="button-row storefront-action-row">

@@ -18,7 +18,9 @@ import {
 import { JsonLd, localBusinessJsonLd, webSiteJsonLd } from "@/lib/seo";
 import { SitePageFrame } from "@/components/SitePageFrame";
 import { VitrineHero } from "@/components/VitrineHero";
+import { AssistanceHomeLink } from "@/components/AssistancePages";
 import { getPublicSitePageLayout } from "@/lib/internal-api";
+import { HOME_HERO } from "@/lib/home-hero-content";
 
 /**
  * Le nom commercial ouvre le titre : sur l'accueil, c'est le nom du site qui
@@ -171,10 +173,7 @@ export default async function HomePage() {
       <SitePageFrame area="public" pageKey="/" initialLayout={homeLayout.data}>
 
       <VitrineHero
-        title="Votre informatique suit votre activité."
-        body="Maintenance, réseau, sauvegarde et accès à distance pour les professionnels, indépendants et petites structures."
-        primary={{ href: "/contact", label: "Demander un devis" }}
-        secondary={{ href: "/services", label: "Voir les services" }}
+        {...HOME_HERO}
       />
 
       <section className="vitrine-audiences vitrine-audiences-first">
@@ -255,6 +254,7 @@ export default async function HomePage() {
         </div>
       </section>
       </SitePageFrame>
+      <AssistanceHomeLink />
     </>
   );
 }

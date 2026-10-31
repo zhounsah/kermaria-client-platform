@@ -91,7 +91,7 @@ export default async function RootLayout({
   const localPortalOrigin = getDevelopmentLocalPortalOrigin();
 
   return (
-    <html lang="fr">
+    <html data-scroll-behavior="smooth" lang="fr">
       <body className={`${inter.variable} ${jetbrainsMono.variable}`}>
         <DeploymentEnvironmentBanner />
         <AppShell

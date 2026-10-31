@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 
 import { SignupForm } from "@/components/SignupForm";
 import { SitePageFrame } from "@/components/SitePageFrame";
@@ -77,7 +78,7 @@ export default async function SignupPage({
 
       <header className={`signup-header ${styles.header}`}>
         <p className="eyebrow">Inscription</p>
-        <h1>Créer un compte client</h1>
+        <AnimatedPublicH1 text="Créer un compte client" />
         <p className="signup-lead">
           {selfServiceCartContinuation
             ? "Créez votre espace client pour finaliser votre commande et retrouver vos services."

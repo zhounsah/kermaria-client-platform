@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 
 import { resolveCorrelationId } from "@/lib/correlation";
 import {
@@ -60,7 +61,7 @@ export default async function SignupVerifyPage({
       <section className={succeeded ? "signup-verify-card signup-verify-success" : "signup-verify-card signup-verify-error"} aria-labelledby="signup-verify-title">
         <span aria-hidden="true" className="signup-verify-icon">{succeeded ? "✓" : "!"}</span>
         <p className="eyebrow">Inscription</p>
-        <h1 id="signup-verify-title">{title}</h1>
+        <AnimatedPublicH1 id="signup-verify-title" text={title} />
         {succeeded ? (
           selfService ? (
             <>

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 import {
   buildPackSheetContentKey,
   getPublicPackManifestBySlug,
@@ -126,7 +127,7 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
   const slots = {
     offer_sheet_intro: <header className="offres-header managed-pack-sheet-header">
       <p className="eyebrow">Offre</p>
-      <h1>{pack.label}</h1>
+      <AnimatedPublicH1 text={pack.label} />
       <p className="offres-lead">{pack.description}</p>
       {content.updatedAt ? <p className="managed-content-updated">
         Mis à jour le {formatDateTime(content.updatedAt)}

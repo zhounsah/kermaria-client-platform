@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 
 import { BillingV2FormuleConfigurator } from "@/components/BillingV2FormuleConfigurator";
 import { SitePageFrame } from "@/components/SitePageFrame";
@@ -51,7 +52,7 @@ export default async function FormuleConfigurationPage({ params, searchParams }:
     <nav className="formule-breadcrumb" aria-label="Fil d'Ariane">
       <Link href="/formules">Offres</Link>
     </nav>
-    <h1>Offres momentanément indisponibles</h1>
+    <AnimatedPublicH1 text="Offres momentanément indisponibles" />
     <p className="formules-empty">Réessayez plus tard ou <Link href="/contact">contactez-nous</Link>.</p>
   </div>;
 
@@ -62,7 +63,7 @@ export default async function FormuleConfigurationPage({ params, searchParams }:
   </nav>;
   const introduction = <header className="formule-header">
     <p className="eyebrow">Offre</p>
-    <h1>{preset.name}</h1>
+    <AnimatedPublicH1 text={preset.name} />
     <p className="formule-lead">{resolvePresetTagline(preset)}</p>
     <p className="formule-baseline">
       Configuration recommandée :{" "}

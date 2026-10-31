@@ -20,6 +20,8 @@
 }
 
 body { color: var(--site-ink); background: var(--site-white); }
+/* La vitrine doit aussi tenir dans 320px avec une barre de défilement visible. */
+html:has(.public-main) { min-width: 0; }
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,

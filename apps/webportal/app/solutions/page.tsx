@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 
 import type { PublicClientSolution } from "@kermaria/shared";
 
@@ -34,7 +35,7 @@ export default async function SolutionsPage() {
         {settings.eyebrow ? (
           <p className="eyebrow">{settings.eyebrow}</p>
         ) : null}
-        <h1>{settings.title}</h1>
+        <AnimatedPublicH1 text={settings.title} />
         {settings.description ? (
           <p className="solutions-lead">{settings.description}</p>
         ) : null}

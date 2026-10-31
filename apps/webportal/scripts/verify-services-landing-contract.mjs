@@ -139,7 +139,7 @@ assert.match(servicesPage, /<PublicServicesLandingPage/);
 assert.match(servicesPage, /parseStorefrontServicesLandingContent\(contentResult\.data\.bodyMarkdown, true\)/);
 assert.doesNotMatch(servicesPage, /resolveStorefrontServicesLandingActions|getBillingV2FormulesCatalog|<PublicStorefrontPage/);
 
-assert.match(renderer, /<h1>\{content\.title\}<\/h1>/);
+assert.match(renderer, /<AnimatedPublicH1 text=\{content\.title\} \/>/);
 assert.match(renderer, /Quel problème cherchez-vous à résoudre/);
 assert.match(renderer, /content\.problemEntries\.map/);
 assert.match(renderer, /<ServiceCategoryCard/);
