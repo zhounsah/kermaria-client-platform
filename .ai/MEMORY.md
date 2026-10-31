@@ -43,17 +43,25 @@
 
 ### Version
 
-- **Production : v2.1.0** déployée le 2026-10-07 depuis le tag immuable
-  `v2.1.0` / commit `09737e2`. L'API SRV-13 garde ce paquet. Le WebPortal SRV-12
-  porte en plus le correctif de libellés `v2.1.0-hotfix.1` / `0f7d652`, sans
+- **Historique avant transition TVA : v2.1.0** déployée le 2026-10-07 depuis le tag immuable
+  `v2.1.0` / commit `09737e2`. L'API SRV-13 gardait ce paquet. Le WebPortal SRV-12
+  portait en plus le correctif de libellés `v2.1.0-hotfix.1` / `0f7d652`, sans
   changer la version affichée ; les anciens runtimes sont conservés.
   Migrations 098–101 appliquées à `kermaria` après sauvegarde vérifiée.
   L'approbation automatique des inscriptions reste désactivée par défaut.
   La revue métier et juridique par le propriétaire reste à terminer.
   Preuves : `docs/releases/V2.1.0.md`,
   `docs/releases/V2.1.0_HOTFIX_1.md` et `docs/CURRENT_STATE.md`.
+- **État live vérifié le 2026-10-14** : HEAD Git `5ce2898`, Web PROD sur
+  `/opt/kermaria/releases/v2.1.1-5ce2898-prod`, API PROD DLL SHA-256
+  `2A9028ECC8CA15BFD91CED5742F3B0AAC0407822C561A551CBF663935519EE61`.
+  La configuration API PROD a été enrichie du Tax Rate Stripe Live FR 20 %
+  inclusif et du numéro TVA vendeur ; confirmation EI `false`, nouveaux
+  Checkout toujours fermés. Sauvegardes, hashes et santé :
+  `docs/releases/V2.1.1_VAT_RUNTIME_CONFIG_2026-10-14.md`.
 - **v2.0.0.0 (2026-08-25)** : bascule Billing V2-only, migrations 070/071. Voir [billing-v2-only-cancellation.md](topics/billing-v2-only-cancellation.md).
 - Historique : v1.4.0.1 (2026-08-20) a migré le diagnostic public vers Billing V2 ([billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md)) ; v1.4.0.0 a livré le socle Billing V2.
+- **Livraison DEV des 2026-10-29/30** : un service Assistance & maintenance à six paliers Billing V2, migrations 103/104/105 sur `kermaria_dev`, mode devis. Le Web DEV actif `webportal-dev-assistance-tiers-ordered-pr1-20261030` reprend la PR #1 depuis `codex/zachary-it-refonte-ready`, conserve le choix de formule jusqu'au devis, anime les sections éditoriales et explique sur le hub l'intérêt d'un abonnement face à une prestation ponctuelle sans inventer de garanties. API et migration restent dans le worktree `codex/frontend-premium-20261030`. Aucun achat réel ni commit. Voir [assistance-maintenance-billing-v2.md](topics/assistance-maintenance-billing-v2.md) et `docs/releases/ASSISTANCE_MAINTENANCE_DEV_2026-10-29.md`.
 
 ### Billing V2 — fiches récupérées des anciennes conversations (2026-09-17)
 
@@ -249,7 +257,8 @@
 
 ### Diagnostic public Billing V2 (2026-08-20)
 
-- /diagnostic produit désormais une BillingV2PublicSelection ou `requires_quote`, demande le devis via /api/formules/devis, puis sort vers /formules/{preset} avec la sélection complète. Aucun SQL/pricing/provisioning ajouté. Référence : [billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md).
+- /diagnostic produit désormais une BillingV2PublicSelection ou
+`requires_quote`, demande le devis via /api/formules/devis, puis sort vers /formules/{preset} avec la sélection complète. Aucun SQL/pricing/provisioning ajouté. Référence : [billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md).
 
 ### Billing V2 (v1.4.0.0)
 

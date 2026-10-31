@@ -7,7 +7,7 @@ metadata:
   status: dev
 ---
 
-# TVA Zachary IT — état DEV
+# TVA Zachary IT — état DEV et suivi PROD
 
 Le propriétaire a fourni les données du mémento DGFiP : réel normal de TVA
 sur option depuis le **01/10/2026**, TVA intracommunautaire **FR85105111520**,
@@ -50,8 +50,8 @@ Git. Le détail des corrections et limites est dans
   troisième facture Stripe Test de 5,90 € demande rapprochement. Stripe Live
   conserve un abonnement actif de 0,50 € créé avant le changement, à revoir
   sans mutation automatique.
-- Aucune livraison PROD ni modification Stripe Live. Revalider les faits live
-  avant une décision de régularisation ou de déploiement.
+- Ce relevé DEV précédait la livraison PROD ultérieure. Revalider les faits
+  live avant toute régularisation, activation de Checkout ou nouveau paiement.
 
 ## Complément de contrôle du 14/10/2026
 
@@ -69,13 +69,30 @@ Git. Le détail des corrections et limites est dans
   avec argument PDF nul. Le correctif sépare la mise à jour du statut `paid` ;
   l'existant n'a pas été réécrit. Six PDF fiscaux DEV et trois PROD ont été
   archivés hors Git avec empreintes conformes à leurs traces SQL.
-- Stripe Live reste sans Tax Rate configuré dans l'API PROD ; l'abonnement
-  test à 0,50 € est actif, sans taxes, échéance au 19/10/2026. Ne pas le
-  modifier sans décision explicite. La préparation PROD et le rollback sont
-  dans `docs/releases/TVA_PROD_PREPARATION_2026-10-14.md`.
-- Version candidate `v2.1.1` retenue sans commit ni tag. Derniers correctifs
+- Avant la configuration fiscale PROD, Stripe Live n'avait pas de Tax Rate
+  configuré dans l'API. L'abonnement test à 0,50 € était actif, sans taxes,
+  échéance au 19/10/2026. La préparation et le rollback sont dans
+  `docs/releases/TVA_PROD_PREPARATION_2026-10-14.md`.
+- La candidate `v2.1.1` avait été validée sur DEV. Derniers correctifs
   API DEV et WebPortal DEV installés ; DLL API
   `3FFC1641A61A755EBAE40C1FEB94D1579FCC075844836AC1799AE0D3C8499525`,
   Web DEV `vat-dev-v2.1.1-20261014-rc1`. Validation globale et navigateur
   réussies, paiement toujours fermé. Voir la fiche de release pour les hashes,
   GO/NO-GO et actions soumises à autorisation.
+
+## Configuration API PROD du 14/10/2026
+
+- HEAD Git observé `5ce2898` ; Web PROD observé sur
+  `/opt/kermaria/releases/v2.1.1-5ce2898-prod`. L'API PROD conserve sa DLL
+  SHA-256 `2A9028ECC8CA15BFD91CED5742F3B0AAC0407822C561A551CBF663935519EE61`.
+- Sur demande expresse, le JSON API PROD a été sauvegardé puis enrichi du
+  Tax Rate Stripe Live `txr_1UQS5FPeE7Jrh43pSi6OSIyc` (FR, 20 %, inclusif,
+  actif), du numéro vendeur `FR85105111520`, de la confirmation TVA `true`
+  et de la confirmation EI `false`. Le flag Checkout reste `false`.
+- Ancien SHA-256 JSON et sauvegardes :
+  `91E118C48278FACB03780084D5800B2FB0CF3A039DF0D6BE4C928107CE6260CB` ;
+  nouveau SHA-256 :
+  `9ADCF972653FE78AE9F770C420872A207E3D224771113E99BCC7BE8135510614`.
+  Les 109 valeurs existantes sont inchangées. Seul `KermariaApiInternal` a
+  redémarré ; `/health/ready` répond 200. Détail et chemins de sauvegarde :
+  `docs/releases/V2.1.1_VAT_RUNTIME_CONFIG_2026-10-14.md`.
