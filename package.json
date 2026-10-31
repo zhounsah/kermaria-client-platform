@@ -39,6 +39,7 @@
         "test:commercial": "npm --prefix apps/webportal run test:commercial",
         "test:diagnostic": "npm --prefix apps/webportal run test:diagnostic",
         "test:catalog": "npm --prefix apps/webportal run test:catalog",
+        "test:assistance": "npm --prefix apps/webportal run test:assistance",
         "test:formules": "npm --prefix apps/webportal run test:formules",
         "test:managed-content": "npm --prefix apps/webportal run test:managed-content",
         "test:editorial": "npm --prefix apps/webportal run test:editorial",

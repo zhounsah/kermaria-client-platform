@@ -30,6 +30,14 @@ export function BillingV2DirectCartAdd({ currency, service }: Props) {
     [service.tiers],
   );
   const [tierCode, setTierCode] = useState(selectableTiers[0]?.id ?? "");
+  const [quantityInput, setQuantityInput] = useState(String(service.directMinimumQuantity ?? 1));
+  const [quantityError, setQuantityError] = useState(false);
+  const isAssistancePro = ["ASSIST-PRO-START", "ASSIST-PRO-BUSINESS", "ASSIST-PRO-PREMIUM"].includes(service.id);
+  const minimumQuantity = service.directMinimumQuantity;
+  const maximumQuantity = service.directMaximumQuantity;
+  const quantityBoundsAvailable = minimumQuantity !== undefined && maximumQuantity !== undefined
+    && Number.isInteger(minimumQuantity) && Number.isInteger(maximumQuantity)
+    && minimumQuantity > 0 && maximumQuantity >= minimumQuantity;
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [added, setAdded] = useState(false);
@@ -40,6 +48,12 @@ export function BillingV2DirectCartAdd({ currency, service }: Props) {
   );
 
   async function addToCart() {
+    const quantity = isAssistancePro ? Number(quantityInput) : 1;
+    if (isAssistancePro && (!quantityBoundsAvailable || !/^\d+$/.test(quantityInput) || !Number.isInteger(quantity) || quantity < minimumQuantity || quantity > maximumQuantity)) {
+      setQuantityError(true);
+      return;
+    }
+    setQuantityError(false);
     setPending(true);
     setMessage(null);
     setReviewRequired(false);
@@ -61,7 +75,7 @@ export function BillingV2DirectCartAdd({ currency, service }: Props) {
         item: {
           serviceCode: service.id,
           tierCode: tierCode || null,
-          quantity: 1,
+          quantity,
           origin: "direct",
         },
       });
@@ -102,6 +116,7 @@ export function BillingV2DirectCartAdd({ currency, service }: Props) {
 
   return (
     <div className="commercial-tariff-direct-add">
+      {isAssistancePro && quantityBoundsAvailable ? <><label><span>Nombre de postes</span><input type="number" min={minimumQuantity} max={maximumQuantity} step={1} inputMode="numeric" value={quantityInput} onChange={(event) => { setQuantityInput(event.currentTarget.value); setQuantityError(false); }} disabled={pending} aria-invalid={quantityError} aria-describedby={quantityError ? `quantity-error-${service.id}` : undefined} /></label>{quantityError ? <p id={`quantity-error-${service.id}`} role="alert">Indiquez un nombre entier de postes entre {minimumQuantity} et {maximumQuantity}.</p> : null}</> : isAssistancePro ? <p>Les quantités disponibles sont momentanément indisponibles.</p> : null}
       {selectableTiers.length > 0 ? (
         <label>
           <span>{service.tierSelectorLabel?.trim() || "Option"}</span>
@@ -121,10 +136,10 @@ export function BillingV2DirectCartAdd({ currency, service }: Props) {
           {formatMoney(selectedTier.recurringPrice)} TTC / mois
         </p>
       ) : null}
-      <button className="button" disabled={pending} onClick={() => void addToCart()} type="button">
+      <button className="button" disabled={pending || (isAssistancePro && !quantityBoundsAvailable)} onClick={() => void addToCart()} type="button">
         {pending ? "Ajout en cours…" : added ? "Ajouter à nouveau" : "Ajouter au panier"}
       </button>
-      {message ? <p aria-live="polite" className="commercial-tariff-direct-feedback">{message} {added || reviewRequired ? <Link href="/panier">Voir mon panier</Link> : null}</p> : null}
+      {message ? <p id={`quantity-feedback-${service.id}`} aria-live="polite" className="commercial-tariff-direct-feedback">{message} {added || reviewRequired ? <Link href="/panier">Voir mon panier</Link> : null}</p> : null}
     </div>
   );
 }

@@ -229,6 +229,7 @@ function frenchNetHint(money: PublicCommercialMoney) {
 }
 
 function priceUnit(service: PublicCommercialService) {
+  if (["ASSIST-PRO-START", "ASSIST-PRO-BUSINESS", "ASSIST-PRO-PREMIUM"].includes(service.id)) return "/ poste / mois";
   return service.billingUnitLabel === "par utilisateur et par mois"
     ? "/ personne / mois"
     : "/ mois";

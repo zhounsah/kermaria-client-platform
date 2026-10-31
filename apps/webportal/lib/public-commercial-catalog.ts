@@ -70,6 +70,7 @@ const TAX_NOTICE = "Prix TTC pour une opération française taxable. Le montant 
 
 const CATEGORY_PRESENTATION: Readonly<Record<string, string>> = {
   "Accès": "Postes et accès à distance",
+  "Assistance": "Assistance et maintenance",
   "Cloud": "Hébergement et services en ligne",
   "Domaines": "Messagerie et domaines",
   "Identité": "Réseau et sécurité",
@@ -300,6 +301,8 @@ function projectService(
 
   return {
     id: service.code,
+    directMinimumQuantity: service.directMinimumQuantity,
+    directMaximumQuantity: service.directMaximumQuantity,
     slug: publicUrl ? publicUrl.slice("/services/".length) : slugFromCode(service.code),
     name,
     tierSelectorLabel: service.tierSelectorLabel,

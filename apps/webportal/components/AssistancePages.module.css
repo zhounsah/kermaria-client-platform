@@ -1,0 +1,26 @@
+.page { max-width: 1180px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+.hero { padding: clamp(2rem, 5vw, 4rem); border-radius: 1.5rem; background: linear-gradient(130deg, #eef6f5, #f6f8fc); }
+.hero h1 { max-width: 18ch; font-size: clamp(2.2rem, 5vw, 4rem); line-height: 1.08; letter-spacing: -.035em; margin: .5rem 0 1rem; }
+.hero > p:last-child { max-width: 62ch; font-size: 1.1rem; line-height: 1.7; }
+.eyebrow { color: #28645e; font-weight: 700; font-size: .85rem; letter-spacing: .06em; text-transform: uppercase; }
+.breadcrumb { margin-bottom: 1.5rem; font-size: .9rem; }
+.section { margin: 4rem 0; }
+.section > h2 { font-size: clamp(1.7rem, 3vw, 2.4rem); margin-bottom: .6rem; }
+.audiences, .cards { display: grid; gap: 1.25rem; margin-top: 2rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.audience, .card { border: 1px solid #dce5e3; border-radius: 1.2rem; padding: 1.7rem; background: #fff; display: flex; flex-direction: column; align-items: flex-start; gap: .8rem; }
+.audience h3, .card h3 { margin: 0; font-size: 1.4rem; }
+.audience p, .card p { margin: 0; line-height: 1.65; }
+.audience > a, .card > a { margin-top: auto; }
+.price { font-size: 1.55rem; font-weight: 700; color: #173c38; }
+.price span, .note { font-size: .88rem; font-weight: 400; }
+.price span { display: block; margin-top: .15rem; }
+.benefits { width: 100%; border-top: 1px solid #dce5e3; padding-top: .75rem; }
+.benefits summary { color: #173c38; cursor: pointer; font-weight: 700; }
+.benefits ul { margin: .8rem 0 0; padding-left: 1.25rem; line-height: 1.55; }
+.benefits li + li { margin-top: .45rem; }
+.note { color: #4b5c5a; margin-top: 1.25rem; line-height: 1.6; }
+.contact { border-radius: 1.2rem; background: #eff5f4; padding: 2rem; }
+.contact h2 { margin-top: 0; }
+@media (max-width: 800px) { .cards { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .page { padding: 2rem 1rem 3rem; } .audiences { grid-template-columns: 1fr; } }

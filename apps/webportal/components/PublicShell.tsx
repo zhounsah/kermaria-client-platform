@@ -25,6 +25,7 @@ type PublicFooterLink = {
 const footerServiceLinks: readonly PublicFooterLink[] = [
   { href: publicHref("/services"), label: "Tous les services" },
   { href: publicHref("/services/support-it"), label: "Assistance & maintenance" },
+  { href: publicHref("/assistance-maintenance"), label: "Abonnements assistance" },
   { href: publicHref("/services/reseau-securite"), label: "Réseau & sécurité" },
   { href: publicHref("/services/cloud-hebergement"), label: "Hébergement & services en ligne" },
   { href: publicHref("/services/domaines-messagerie"), label: "Domaines & messagerie" },
@@ -96,6 +97,7 @@ function ServicesMegaMenu({ onNavigate }: { onNavigate?: () => void }) {
           <a href={publicHref("/services/vpn-entreprise")} onClick={close}><strong>Accès à distance</strong><span>Retrouver vos outils en sécurité</span></a>
           <a href={publicHref("/services/hebergement-web")} onClick={close}><strong>Site web</strong><span>Mettre votre site en ligne et le suivre</span></a>
         </div>
+        <a className="public-services-mega-all" href={publicHref("/assistance-maintenance")} onClick={close}>Abonnements assistance et maintenance</a>
         <a className="public-services-mega-all" href={publicHref("/services")} onClick={close}>Voir tous les services</a>
       </div>
     </div>
@@ -125,6 +127,7 @@ function MobileServicesMenu({ onNavigate }: { onNavigate: () => void }) {
           </a>
         ))}
         <a href={publicHref("/services/vps")} onClick={onNavigate}><strong>Serveur à distance</strong><span>Une solution suivie pour vos outils</span></a>
+        <a href={publicHref("/assistance-maintenance")} onClick={onNavigate}><strong>Abonnements assistance</strong><span>Particuliers et professionnels</span></a>
         <a href={publicHref("/services/vpn-entreprise")} onClick={onNavigate}><strong>Accès à distance</strong><span>Retrouver vos outils en sécurité</span></a>
         <a href={publicHref("/services/hebergement-web")} onClick={onNavigate}><strong>Site web</strong><span>Mettre votre site en ligne et le suivre</span></a>
         <a className="public-mobile-services-all" href={publicHref("/services")} onClick={onNavigate}>Voir tous les services</a>

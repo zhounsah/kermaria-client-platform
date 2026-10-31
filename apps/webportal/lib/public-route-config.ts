@@ -2,6 +2,7 @@ export const PUBLIC_ROUTES = [
   "/",
   "/portfolio",
   "/offres",
+  "/assistance-maintenance",
   "/tarifs",
   "/panier",
   // Le configurateur vit sous `/formules/<code>` : sans cette entree, seule

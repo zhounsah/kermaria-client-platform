@@ -43,6 +43,7 @@
     "test:koxo": "node scripts/verify-koxo-contract.mjs",
     "test:email-live": "node scripts/verify-email-live-contract.mjs",
     "test:catalog": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-billing-v2-catalog-contract.mjs && node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-public-commercial-ordering-model.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-public-commercial-catalog-contract.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-admin-catalog-ui-contract.mjs",
+    "test:assistance": "node scripts/verify-assistance-pages-contract.mjs",
     "test:formules": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-formules-contract.mjs",
     "test:formules-cart-handoff": "node scripts/verify-formules-cart-handoff.mjs",
     "test:client-solutions": "node scripts/verify-client-solutions-contract.mjs",

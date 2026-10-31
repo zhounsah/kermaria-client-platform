@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import type { ManagedContentKey } from "@kermaria/shared";
 import { ErrorState } from "@/components/ErrorState";
 import { PublicMessagingCategoryPage } from "@/components/PublicMessagingCategoryPage";
@@ -101,6 +102,13 @@ export default async function ServiceCategoryRoute({ params }: CategoryPageProps
         content={content}
         serviceSlug={serviceSlug}
         selfServiceOrderable={selfServiceOrderable}
+        beforeSections={slug === "support-it" ? (
+          <section className="service-section">
+            <h2>Abonnements d’assistance &amp; maintenance</h2>
+            <p>Découvrez les abonnements proposés aux particuliers et aux professionnels.</p>
+            <Link className="button button-secondary" href="/assistance-maintenance">Voir les abonnements</Link>
+          </section>
+        ) : null}
       />
     )
   ) : (

@@ -271,6 +271,10 @@ export default async function HomePage() {
         </div>
       </section>
       </SitePageFrame>
+      <section className="vitrine-offer-path">
+        <header className="vitrine-section-header"><h2>Assistance &amp; maintenance</h2><p>Découvrez les abonnements pour particuliers et professionnels.</p></header>
+        <Link className="button button-secondary" href="/assistance-maintenance">Voir les abonnements</Link>
+      </section>
     </>
   );
 }
