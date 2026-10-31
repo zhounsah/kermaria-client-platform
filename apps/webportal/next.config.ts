@@ -59,6 +59,7 @@ const NOINDEX_HEADER = { key: "X-Robots-Tag", value: "noindex, nofollow" };
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  poweredByHeader: false,
   output: "standalone",
   transpilePackages: ["@kermaria/shared"],
   /**
