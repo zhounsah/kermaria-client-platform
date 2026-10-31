@@ -176,7 +176,21 @@ public static class BillingV2PublicCatalogSeed
                 "Support",
                 "subscription",
                 990,
-                [])
+                []),
+            new(
+                "ASSISTANCE-MAINTENANCE", "Assistance & maintenance", "Assistance",
+                "subscription", null,
+                [
+                    new("ASSIST-PERS-ESSENTIEL", "Essentiel", "Particuliers : 1 ordinateur, 15 minutes par mois.", 15, 990, true),
+                    new("ASSIST-PERS-SERENITE", "Sérénité", "Particuliers : jusqu'à 2 ordinateurs, 45 minutes par mois.", 45, 1990, true),
+                    new("ASSIST-PERS-PREMIUM", "Premium", "Particuliers : jusqu'à 4 ordinateurs, 90 minutes par mois.", 90, 3990, true),
+                    new("ASSIST-PRO-START", "Pro Start", "Professionnels : suivi par poste, 15 minutes par mois.", 15, 2280, true),
+                    new("ASSIST-PRO-BUSINESS", "Pro Business", "Professionnels : suivi par poste, 45 minutes par mois.", 45, 4680, true),
+                    new("ASSIST-PRO-PREMIUM", "Pro Premium", "Professionnels : suivi par poste, 90 minutes par mois.", 90, 8280, true)
+                ],
+                DiscountEligible: false, PublicOrderingMode: "quote",
+                Description: "Accompagnement mensuel pour les particuliers et les professionnels, selon la formule choisie.",
+                TierSelectorLabel: "Formule")
         ];
 
     public static IReadOnlyList<BillingV2PublicPreset> Presets()

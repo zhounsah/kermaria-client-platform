@@ -15,6 +15,7 @@ public static class BillingV2PublicCatalogTests
     public static Task RunAsync()
     {
         VerifyPresetBaselinePricesMatchPublishedOffers();
+        VerifyAssistanceFallbackPrices();
         VerifyTierAttributesStayDisplayOnly();
         VerifyCommitmentPaymentOptionsMatchTheCatalog();
         VerifyCommitmentDiscountsAreAppliedByTheEngine();
@@ -50,6 +51,34 @@ public static class BillingV2PublicCatalogTests
         VerifyDirectOrderingEligibilityIsFailClosed();
         VerifyLegacyPresetDefaultsIgnoreCartOnlyOptions();
         return Task.CompletedTask;
+    }
+
+    private static void VerifyAssistanceFallbackPrices()
+    {
+        var catalog = BillingV2PublicCatalogSeed.Snapshot();
+        var service = catalog.Services.Single(item => item.Code == "ASSISTANCE-MAINTENANCE");
+        Ensure(service.FlatMonthlyAmountCents is null
+            && !service.DiscountEligible && !service.CartDirectEligible
+            && service.DirectMinimumQuantity == 1
+            && service.DirectMaximumQuantity == 1
+            && service.Tiers.Count == 6,
+            "L'assistance est un seul service a six paliers, ferme a la commande directe.");
+        foreach (var (code, gross, net) in new[]
+        {
+            ("ASSIST-PERS-ESSENTIEL", 990L, 825L),
+            ("ASSIST-PERS-SERENITE", 1990L, 1658L),
+            ("ASSIST-PERS-PREMIUM", 3990L, 3325L),
+            ("ASSIST-PRO-START", 2280L, 1900L),
+            ("ASSIST-PRO-BUSINESS", 4680L, 3900L),
+            ("ASSIST-PRO-PREMIUM", 8280L, 6900L)
+        })
+        {
+            var tier = service.Tiers.Single(item => item.Code == code);
+            Ensure(tier.MonthlyAmountCents == gross
+                && tier.MonthlyFrenchNetAmountCents == net
+                && tier.PublicSelectable,
+                "Chaque palier d'assistance affiche son prix sans activer le panier.");
+        }
     }
 
     /// <summary>
