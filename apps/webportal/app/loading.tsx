@@ -9,7 +9,7 @@ export default function Loading() {
   const pathname = usePathname();
   if (pathname === "/") return <div className="home-loading-screen">
     <p className="home-loading-kicker">Zachary IT · Informatique professionnelle</p>
-    <p className="home-loading-title">{HOME_HERO.title}</p>
+    <h1 className="home-loading-title">{HOME_HERO.title}</h1>
     <p className="home-loading-lead">{HOME_HERO.body}</p>
     <Link className="button home-loading-action" href={HOME_HERO.primary.href}>{HOME_HERO.primary.label}</Link>
   </div>;
