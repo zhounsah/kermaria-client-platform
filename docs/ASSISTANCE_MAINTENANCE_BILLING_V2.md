@@ -2,7 +2,7 @@
 
 ## Modèle du catalogue
 
-La gamme est **un service** Billing V2 `ASSISTANCE-MAINTENANCE` (`pricing_model=tiered`, portée `subscription`) avec six paliers publics. Les codes `ASSIST-*` identifient désormais les **paliers**, pas des services distincts. Chaque palier possède son prix mensuel versionné et son profil `manual_delivery`. Les trois paliers particuliers et les trois paliers professionnels restent comparables sur leurs pages dédiées ; le code du palier suit la demande de devis jusqu'au formulaire de contact.
+La gamme est **un service** Billing V2 `ASSISTANCE-MAINTENANCE` (`pricing_model=tiered`, portée `subscription`) avec six paliers publics. Les codes `ASSIST-*` identifient les **paliers**, pas des services distincts. Chaque palier possède son prix mensuel versionné et son profil `manual_delivery`. Les trois paliers particuliers et les trois paliers professionnels restent comparables sur leurs pages dédiées ; le code du palier suit le visiteur jusqu'au configurateur du panier.
 
 | Palier | Public | Prix TTC mensuel | Prix HT indicatif France |
 | --- | --- | ---: | ---: |
@@ -13,11 +13,11 @@ La gamme est **un service** Billing V2 `ASSISTANCE-MAINTENANCE` (`pricing_model=
 | `ASSIST-PRO-BUSINESS` | Professionnels, par poste | 46,80 € | 39,00 € |
 | `ASSIST-PRO-PREMIUM` | Professionnels, par poste | 82,80 € | 69,00 € |
 
-Les montants HT sont indicatifs au taux normal français de 20 %. Billing V2 et le devis final restent l'autorité pour la TVA et la facturation. Le portail ne calcule ni n'envoie un montant à l'API. Les prestations incluses sont présentées dans les pages de formules ; les minutes non utilisées ne sont pas reportées. La section expliquant l'intérêt du suivi mensuel se place immédiatement après le héros du hub, avant le choix du public.
+Les montants HT sont indicatifs au taux normal français de 20 %. Billing V2 et la quote serveur restent l'autorité pour la TVA et la facturation. Le portail ne transmet aucun montant à l'API. Les prestations incluses sont présentées dans les pages de formules ; les minutes non utilisées ne sont pas reportées. La section expliquant l'intérêt du suivi mensuel se place immédiatement après le héros du hub, avant le choix du public.
 
 ## Commande, quantité et provisioning
 
-Le service est public en **mode devis** (`public_ordering_mode=quote`, `self_service_orderable=0`). Aucun achat direct, paiement récurrent ou souscription fournisseur n'a été déclenché par cette livraison. Le nombre de postes professionnels est précisé au devis. La limite de quantité du panier direct est aujourd'hui portée par le **service**, pas par le palier : le nouveau service garde une borne sûre de 1. Avant une éventuelle ouverture du panier direct pour plusieurs postes professionnels, ajouter et faire respecter des bornes par palier dans l'API, puis vérifier le calcul des lignes et la facturation. Le contrôle d'interface seul ne suffirait pas.
+Les migrations `106_assistance_self_service.sql` (colonnes additives) et `107_assistance_self_service_activation.sql` (activation commerciale) préparent le **libre-service** validé pour la v2.2 : `public_ordering_mode=direct`, `self_service_orderable=1`, particuliers à quantité 1, professionnels de 1 à 10 postes par palier. Les bornes sont persistées par palier et revalidées par API-INTERNAL à l'ajout, à la modification, au calcul de quote et avant le Checkout. Le portail présélectionne le palier choisi et n'envoie que son code et la quantité ; le moteur serveur recalcule le prix. Les durées FLEX, 6 et 12 mois utilisent les engagements existants de Billing V2, sans remise d'engagement sur l'Assistance. Le panier direct passe uniquement par Stripe. Aucun paiement de production n'a encore été exécuté pour cette gamme.
 
 Aucune règle de provisioning AD ou KoXo ne cible ce service ou ses paliers. Les postes clients externes ne sont pas enrôlés dans l'AD HOME.BZH. Le mécanisme distinct d'identité du compte portail reste inchangé.
 
@@ -29,4 +29,4 @@ La sauvegarde pré-103 est `C:\Users\zhounsah\Backups\Kermaria\kermaria_dev_pre1
 
 `105_assistance_tier_labels.sql` corrige uniquement deux descriptions publiques, avec une garde respectant toute modification ultérieure par l’administration. Après 104 et 105 : un service actif, six paliers actifs et publics, six prix mensuels, six profils de livraison manuelle, zéro ancien service `ASSIST-*`, zéro règle de provisioning AD. Les trois prix TTC particuliers et les trois prix HT indicatifs professionnels ont été relus en base et dans les pages DEV. Le catalogue `/tarifs` présente un seul article avec ses déclinaisons. L'API DEV et PROD, leurs configurations et les parcours de paiement n'ont pas été redéployés par cette correction ; seul le fichier de migration 104 a été copié dans la release API DEV et exécuté via le runner explicite.
 
-Pour toute future activation commerciale, vérifier les contrats, les outils d'exploitation, le suivi des minutes et remises, les garde-fous checkout et un parcours complet de test quote → checkout → règlement → abonnement → facture. La recette actuelle couvre le catalogue et le devis ; elle ne constitue pas une preuve de paiement ni de renouvellement.
+Avant l'ouverture commerciale, vérifier les CGV, le suivi des minutes et des remises hors forfait, la livraison manuelle, les garde-fous du Checkout global et un parcours complet panier → quote → Stripe test → webhook → abonnement → renouvellement → facture. Les preuves DEV de la première version en mode devis ne prouvent ni paiement ni renouvellement en libre-service.
