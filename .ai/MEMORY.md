@@ -12,9 +12,9 @@
 
 ## État courant / informations récentes
 
-### Candidate Zachary IT v2.2 — 31/10/2026
+### Zachary IT v2.2 en production — 31/10/2026
 
-- `codex/release-v2.2.0` consolide les commits de la refonte publique et Assistance Billing V2. Candidate déployée et vérifiée sur DEV ; PROD encore sur `v2.1.1-hotfix.5` avec Checkout fermé au dernier relevé. Les modalités Assistance ont été validées par le propriétaire, mais leur publication dans les CGV CMS et la recette de règlement sans pièce fiscale réelle restent à faire. Voir [zachary-v2-2-release-2026-10-31.md](topics/zachary-v2-2-release-2026-10-31.md) et `docs/releases/V2.2.0.md`. Les lignes historiques ci-dessous décrivant des changements « non commités » ou un Web DEV antérieur ne reflètent plus cet état de release.
+- `codex/release-v2.2.0` consolide la refonte publique et Assistance Billing V2. Le propriétaire a autorisé les migrations 103–107, le libre-service des six abonnements et le Checkout de tout le catalogue éligible, stockage compris sur la preuve KoXo DEV. PROD utilise le Web v2.2 corrigé `98a1d6c`, l'API v2.2 et les cinq migrations ; les CGV approuvées sont publiées et les deux drapeaux Checkout sont ouverts. Santé HTTP 200, panier/quantités et pages principales vérifiés sans règlement réel. La mesure Lighthouse PROD corrigée donne performance 72/72, accessibilité 100/100, SEO 100/100, LCP environ 6 s et CLS 0/0. Le premier paiement réel, son webhook, BPCE et le quota stockage client PROD doivent être surveillés ; la résiliation Billing V2 reste manuelle. Voir [zachary-v2-2-release-2026-10-31.md](topics/zachary-v2-2-release-2026-10-31.md) et `docs/releases/V2.2.0.md`. Les lignes historiques ci-dessous décrivant des changements « non commités » ou un Web DEV antérieur ne reflètent plus cet état de release.
 
 ### Frontend public PR #1
 

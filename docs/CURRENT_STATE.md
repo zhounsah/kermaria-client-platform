@@ -1,8 +1,10 @@
-# Current state - Zachary IT platform
-Last verified: 2026-10-07
-Current production release: `v2.1.0`
-Release commit: `09737e2bd644c44faa80a723fc7b1ea42496b332`
-This document is the primary entry point for the current platform state. Older V0.x/V1.x documents remain useful as implementation history, but they must not override this file, the current code, or the current deployment runbooks.
+# État courant — plateforme Zachary IT
+
+Dernière vérification : 31/10/2026.
+Release en production : `v2.2.0`. Web SRV-12 sur `/opt/kermaria/releases/webportal-v2.2.0-98a1d6c-prod` (correctif CSS issu de `98a1d6c`) ; API SRV-13 avec DLL SHA-256 `8FBF778B53A2144F1804A2EB4C5893B722E2BEA20C16611597DA7C43009A64FB`. Migrations MariaDB 103–107 appliquées à `kermaria`. Les deux drapeaux Checkout Billing V2 sont ouverts ; le parcours autoritaire utilise Stripe LIVE, avec le catalogue éligible et les six abonnements Assistance. Les CGV v2.2 approuvées sont publiées. Santé des deux services HTTP 200 après bascule. La recette v2.2 n'a provoqué aucun achat LIVE, webhook, facture BPCE ni provisionnement de stockage client PROD : surveiller le premier passage. Voir [le dossier de release](releases/V2.2.0.md) pour les mesures, empreintes, limites et retours arrière.
+
+Ce document est le point d'entrée de l'état courant. Les sections historiques ci-dessous décrivent des fonctionnalités livrées à des versions précédentes ; le code, l'état live vérifié et le dossier de release priment sur leurs dates ou formulations antérieures.
+
 ## Production topology
 ```text
 Internet
