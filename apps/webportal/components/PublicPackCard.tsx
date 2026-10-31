@@ -39,7 +39,6 @@ export function PublicPackCard({
         ) : null}
       </header>
 
-      <p className="public-pack-headline">{pack.headline}</p>
       <p className="public-pack-description">{pack.description}</p>
 
       <div className="public-pack-pricing">
@@ -57,17 +56,9 @@ export function PublicPackCard({
 
       <div className="public-pack-columns">
         <div>
-          <h3>Inclus</h3>
+          <h3>Ce que comprend l&apos;offre</h3>
           <ul>
             {pack.included.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          <h3>Différences clés</h3>
-          <ul>
-            {pack.highlights.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
@@ -78,7 +69,6 @@ export function PublicPackCard({
         <p className="public-pack-policy-kicker">
           {backupPolicy.included ? "Sauvegarde incluse" : "Sauvegarde en option"}
         </p>
-        <p className="public-pack-policy-text">{backupPolicy.summary}</p>
         <Link className="text-link" href={backupPolicy.detailsHref}>
           {backupPolicy.detailsLabel}
         </Link>

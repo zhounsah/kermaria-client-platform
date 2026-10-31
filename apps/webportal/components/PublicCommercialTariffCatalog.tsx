@@ -9,13 +9,16 @@ import type {
 } from "@kermaria/shared";
 
 import { BillingV2DirectCartAdd } from "@/components/BillingV2DirectCartAdd";
+import { ASSISTANCE_SERVICE_CODE, assistanceContactHref, findAssistanceOffer, orderAssistanceTiers } from "@/lib/assistance-offers";
 
 type PublicCommercialTariffCatalogProps = {
+  assistanceTierCode?: string;
   catalog: PublicCommercialCatalog;
   currency: string;
 };
 
 export function PublicCommercialTariffCatalog({
+  assistanceTierCode,
   catalog,
   currency,
 }: PublicCommercialTariffCatalogProps) {
@@ -40,8 +43,7 @@ export function PublicCommercialTariffCatalog({
   return (
     <section className="service-section commercial-tariffs" aria-labelledby="commercial-tariffs-title">
       <header className="service-section-heading commercial-tariffs-heading">
-        <span className="card-kicker">Catalogue des services</span>
-        <h2 id="commercial-tariffs-title">Catalogue tarifaire</h2>
+        <h2 id="commercial-tariffs-title">Services et tarifs publiés</h2>
       </header>
 
       {categories.length > 1 ? (
@@ -75,6 +77,7 @@ export function PublicCommercialTariffCatalog({
             <div className="commercial-tariffs-grid">
               {services.map((service) => (
                 <CommercialTariffCard
+                  assistanceTierCode={assistanceTierCode}
                   currency={currency}
                   key={service.id}
                   service={service}
@@ -89,12 +92,16 @@ export function PublicCommercialTariffCatalog({
 }
 
 function CommercialTariffCard({
+  assistanceTierCode,
   currency,
   service,
 }: {
+  assistanceTierCode?: string;
   currency: string;
   service: PublicCommercialService;
 }) {
+  const assistance = service.id === ASSISTANCE_SERVICE_CODE;
+  const tiers = assistance ? orderAssistanceTiers(service.tiers.filter((tier) => tier.selectable)) : service.tiers;
   return (
     <article className="commercial-tariff-card">
       <div className="commercial-tariff-card-heading">
@@ -102,25 +109,28 @@ function CommercialTariffCard({
         {service.description ? <p>{service.description}</p> : null}
       </div>
 
-      <PriceSummary service={service} />
+      <PriceSummary assistanceTierCode={assistanceTierCode} service={service} />
 
-      {service.tiers.length > 0 ? (
+      {tiers.length > 0 ? (
         <details className="commercial-tariff-tiers">
           <summary>Voir les options disponibles</summary>
           <ul>
-            {service.tiers.map((tier) => (
+            {tiers.map((tier) => (
               <li key={tier.id}>
                 <span>
                   <strong>{tier.label}</strong>
                   {tier.description ? ` — ${tier.description}` : ""}
                   {tier.details.length > 0 ? ` (${tier.details.join(", ")})` : ""}
                 </span>
-                <span>{tier.recurringPrice ? <>{formatMoney(tier.recurringPrice)} TTC / mois{frenchNetHint(tier.recurringPrice)}</> : "Sur devis"}</span>
+                <span>{tier.recurringPrice ? <>{formatMoney(tier.recurringPrice)} TTC {assistance && findAssistanceOffer(tier.id)?.audience === "professionnels" ? "/ poste / mois" : "/ mois"}{frenchNetHint(tier.recurringPrice)}</> : "Sur devis"}</span>
                 {tier.initialFees.map((fee, index) => (
                   <span className="commercial-tariff-tier-fee" key={`${tier.id}-fee-${index}`}>
                     + {formatMoney(fee)} TTC de mise en service{frenchNetHint(fee)}
                   </span>
                 ))}
+                {assistance && service.orderingMode === "quote" && findAssistanceOffer(tier.id) ? (
+                  <Link href={assistanceContactHref(findAssistanceOffer(tier.id)!)}>Demander un devis pour {tier.label}</Link>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -128,7 +138,7 @@ function CommercialTariffCard({
       ) : null}
 
       {service.initialFees.length === 0
-        && service.tiers.some((tier) => tier.initialFees.length > 0) ? (
+        && tiers.some((tier) => tier.initialFees.length > 0) ? (
           <p className="commercial-tariff-tier-fee-notice">
             Des frais de mise en service s’appliquent selon le palier choisi.
           </p>
@@ -141,10 +151,18 @@ function CommercialTariffCard({
       <div className="commercial-tariff-actions">
         {service.directlyOrderable ? (
           <div id={`ajouter-${slug(service.id)}`}>
-            <BillingV2DirectCartAdd currency={currency} service={service} />
+            <BillingV2DirectCartAdd
+              currency={currency}
+              initialTierCode={assistance ? assistanceTierCode : undefined}
+              key={`${service.id}:${assistanceTierCode ?? ""}`}
+              service={service}
+            />
           </div>
         ) : (
-          <Link className="button" href={service.primaryCta.href}>{service.primaryCta.label}</Link>
+          <Link
+            className="button"
+            href={assistance && service.orderingMode === "quote" ? "/assistance-maintenance" : service.primaryCta.href}
+          >{assistance && service.orderingMode === "quote" ? "Comparer les formules" : service.primaryCta.label}</Link>
         )}
         {service.secondaryCta ? (
           <Link className="service-inline-link" href={service.secondaryCta.href}>
@@ -157,22 +175,30 @@ function CommercialTariffCard({
 }
 
 function PriceSummary({
+  assistanceTierCode,
   service,
 }: {
+  assistanceTierCode?: string;
   service: PublicCommercialService;
 }) {
-  if (service.priceType === "quote" || !service.startingPrice) {
+  const selectedTier = service.id === ASSISTANCE_SERVICE_CODE
+    ? service.tiers.find((tier) => tier.id === assistanceTierCode && tier.selectable) : null;
+  const price = selectedTier?.recurringPrice ?? service.startingPrice;
+  if (service.priceType === "quote" || !price) {
     return <p className="commercial-tariff-price commercial-tariff-price-quote">Sur devis</p>;
   }
 
-  const prefix = service.priceType === "from" ? "À partir de " : "";
+  const prefix = selectedTier ? `${selectedTier.label} · ` : service.priceType === "from" ? "À partir de " : "";
+  const unit = selectedTier && findAssistanceOffer(selectedTier.id)?.audience === "professionnels"
+    ? "/ poste / mois" : priceUnit(service);
+  const initialFees = [...service.initialFees, ...(selectedTier?.initialFees ?? [])];
   return (
     <div className="commercial-tariff-price-block">
       <p className="commercial-tariff-price">
-        {prefix}{formatMoney(service.startingPrice)} TTC <span>{priceUnit(service)}</span>
+        {prefix}{formatMoney(price)} TTC <span>{unit}</span>
       </p>
-      {frenchNetHint(service.startingPrice)}
-      {service.initialFees.map((fee, index) => (
+      {frenchNetHint(price)}
+      {initialFees.map((fee, index) => (
         <p className="commercial-tariff-fee" key={`fee-${index}`}>
           + {formatMoney(fee)} TTC de frais de mise en service{frenchNetHint(fee)}
         </p>

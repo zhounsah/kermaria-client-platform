@@ -37,7 +37,11 @@ type PublicRouteEntry = {
 const PUBLIC_ROUTE_ENTRIES: PublicRouteEntry[] = [
   { path: "/", changeFrequency: "monthly", priority: 1 },
   { path: "/offres", changeFrequency: "weekly", priority: 0.9 },
+  { path: "/assistance-maintenance", changeFrequency: "monthly", priority: 0.8 },
+  { path: "/assistance-maintenance/particuliers", changeFrequency: "monthly", priority: 0.7 },
+  { path: "/assistance-maintenance/professionnels", changeFrequency: "monthly", priority: 0.7 },
   { path: "/services", changeFrequency: "monthly", priority: 0.9, contentKey: "storefront:services" },
+  { path: "/vpn-ou-bureau-a-distance-que-choisir", changeFrequency: "monthly", priority: 0.7 },
   { path: "/tarifs", changeFrequency: "monthly", priority: 0.85, contentKey: "storefront:tarifs" },
   // Les pages `/formules/<code>` ne sont pas declarees : ce sont des
   // configurateurs dont le contenu depend d'une selection, pas des pages

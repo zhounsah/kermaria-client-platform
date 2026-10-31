@@ -82,7 +82,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
             {
                 _logger.LogInformation(
                     "Catalogue Billing V2 absent du schema : repli sur le seed.");
-                return BillingV2PublicCatalogSeed.Snapshot();
+                return ReadOnlyFallback();
             }
 
             var now = DateTime.UtcNow;
@@ -104,7 +104,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
 
             if (presets.Count == 0 || services.Count == 0)
             {
-                return BillingV2PublicCatalogSeed.Snapshot();
+                return ReadOnlyFallback();
             }
 
             return new BillingV2PublicCatalogSnapshot(
@@ -119,7 +119,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
             _logger.LogWarning(
                 exception,
                 "Lecture du catalogue Billing V2 indisponible : repli sur le seed.");
-            return BillingV2PublicCatalogSeed.Snapshot();
+            return ReadOnlyFallback();
         }
     }
 
@@ -135,12 +135,27 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
             BillingV2AuthoritativeCheckoutGate.Evaluate(
                 _runtime,
                 _sql.IsPersistent
-                    && !string.IsNullOrWhiteSpace(_sql.ConnectionString),
+                    && !string.IsNullOrWhiteSpace(_sql.ConnectionString)
+                    && catalog.Source == BillingV2PublicCatalogSeed.DatabaseSourceName,
                 "billing-v2-public-quote-probe"),
             _stripe.HasFrenchInclusiveVatTaxRate,
             _bpce.Mode is BpceIntegrationMode.Mock
                 || _bpce.Mode is BpceIntegrationMode.Live
                     && _bpce.SellerInvoiceIdentityConfirmed);
+    }
+
+    private static BillingV2PublicCatalogSnapshot ReadOnlyFallback()
+    {
+        var seed = BillingV2PublicCatalogSeed.Snapshot();
+        return seed with
+        {
+            Services = seed.Services.Select(service => service with
+            {
+                CartDirectEligible = false,
+                SelfServiceOrderable = false,
+                PublicOrderingMode = BillingV2PublicOrderingModes.Quote
+            }).ToArray()
+        };
     }
 
     private static async Task<bool> SchemaIsReadyAsync(
@@ -175,11 +190,13 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
             SELECT COUNT(*)
             FROM information_schema.columns
             WHERE table_schema = DATABASE()
-              AND table_name = 'billing_v2_services'
-              AND column_name IN ('public_ordering_mode', 'configuration_policy', 'tier_selector_label');
+              AND ((table_name = 'billing_v2_services'
+                    AND column_name IN ('public_ordering_mode', 'configuration_policy', 'tier_selector_label', 'direct_minimum_quantity', 'direct_maximum_quantity'))
+                OR (table_name = 'billing_v2_service_tiers'
+                    AND column_name IN ('direct_minimum_quantity', 'direct_maximum_quantity')));
             """;
         return Convert.ToInt32(await columnCommand.ExecuteScalarAsync(
-            cancellationToken)) == 3;
+            cancellationToken)) == 7;
     }
 
     private static async Task<IReadOnlyList<BillingV2PublicService>>
@@ -208,6 +225,8 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     service.self_service_orderable,
                     service.public_ordering_mode,
                     service.configuration_policy,
+                    service.direct_minimum_quantity,
+                    service.direct_maximum_quantity,
                     service.pricing_model,
                     service.display_order,
                     tier.id AS tier_id,
@@ -217,6 +236,8 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     tier.numeric_value,
                     tier.public_selectable,
                     tier.display_order AS tier_display_order,
+                    tier.direct_minimum_quantity AS tier_direct_minimum_quantity,
+                    tier.direct_maximum_quantity AS tier_direct_maximum_quantity,
                     price.price_code,
                     price.price_version,
                     price.amount_cents,
@@ -276,6 +297,8 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     service.self_service_orderable,
                     service.public_ordering_mode,
                     service.configuration_policy,
+                    service.direct_minimum_quantity,
+                    service.direct_maximum_quantity,
                     service.pricing_model,
                     service.display_order,
                     NULL AS tier_id,
@@ -285,6 +308,8 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     NULL AS numeric_value,
                     0 AS public_selectable,
                     0 AS tier_display_order,
+                    NULL AS tier_direct_minimum_quantity,
+                    NULL AS tier_direct_maximum_quantity,
                     price.price_code,
                     price.price_version,
                     price.amount_cents,
@@ -429,6 +454,8 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     tierFirst.PublicSelectable,
                     components)
                 {
+                    DirectMinimumQuantity = tierFirst.TierDirectMinimumQuantity,
+                    DirectMaximumQuantity = tierFirst.TierDirectMaximumQuantity,
                     Attributes = tierFirst.TierId is { } tierId
                         && attributesByTier.TryGetValue(tierId, out var attributes)
                         ? attributes
@@ -458,7 +485,11 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                 flatComponents,
                 first.ServiceDescription,
                 IsCartDirectEligible(first, tiers, flatComponents),
-                first.TierSelectorLabel));
+                first.TierSelectorLabel)
+            {
+                DirectMinimumQuantity = first.DirectMinimumQuantity,
+                DirectMaximumQuantity = first.DirectMaximumQuantity
+            });
         }
 
         return services;
@@ -735,6 +766,8 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     ? null
                     : reader.GetString("public_ordering_mode")),
             reader.GetString("configuration_policy"),
+            reader.GetInt32("direct_minimum_quantity"),
+            reader.GetInt32("direct_maximum_quantity"),
             reader.GetString("pricing_model"),
             reader.GetInt32("display_order"),
             MariaDbIdentifierReader.ReadNullable(reader, "tier_id"),
@@ -751,6 +784,10 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                 ? null
                 : reader.GetInt32("numeric_value"),
             ReadFlag(reader, "public_selectable", whenNull: false),
+            reader.IsDBNull(reader.GetOrdinal("tier_direct_minimum_quantity"))
+                ? 1 : reader.GetInt32("tier_direct_minimum_quantity"),
+            reader.IsDBNull(reader.GetOrdinal("tier_direct_maximum_quantity"))
+                ? 1 : reader.GetInt32("tier_direct_maximum_quantity"),
             reader.GetString("charge_trigger"),
             new BillingV2ServicePriceCandidate(
                 MariaDbIdentifierReader.ReadRequired(reader, "service_price_id"),
@@ -774,6 +811,8 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
         bool SelfServiceOrderable,
         string? PublicOrderingMode,
         string ConfigurationPolicy,
+        int DirectMinimumQuantity,
+        int DirectMaximumQuantity,
         string PricingModel,
         int DisplayOrder,
         string? TierId,
@@ -782,6 +821,8 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
         string? TierDescription,
         int? NumericValue,
         bool PublicSelectable,
+        int TierDirectMinimumQuantity,
+        int TierDirectMaximumQuantity,
         string ChargeTrigger,
         BillingV2ServicePriceCandidate Candidate);
 

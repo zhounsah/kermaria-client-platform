@@ -411,7 +411,7 @@ assert.match(
 // 12. Coquille publique : marque dans l'en-tete, les deux noms au pied de page.
 const headerBrand = publicShell.slice(
   publicShell.indexOf('className="brand brand-public"'),
-  publicShell.indexOf("</a>", publicShell.indexOf('className="brand brand-public"')),
+  publicShell.indexOf("</Link>", publicShell.indexOf('className="brand brand-public"')),
 );
 assert.ok(
   headerBrand.includes('className="brand-logo brand-logo-public"'),

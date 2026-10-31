@@ -464,18 +464,19 @@ export function AdminPageBuilder() {
               </div> : null}
             </div>}
         </section>)}
-        <div className="content-panel page-builder-add"><select onChange={(event) => setAddType(event.target.value as SitePageBlockType)} value={effectiveAddType}>{availableTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+        <div className="content-panel page-builder-add"><label>Type de bloc<select onChange={(event) => setAddType(event.target.value as SitePageBlockType)} value={effectiveAddType}>{availableTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
           <button className="button button-secondary" disabled={layout.blocks.length >= 40} onClick={add} type="button">Ajouter un bloc</button></div>
       </div>
       <aside className="page-builder-side">
-        <section className="content-panel"><h2>Aperçu du brouillon</h2><p>Les blocs éditoriaux utilisent le rendu de la page dans la largeur de ce panneau. Les fonctions existantes sont représentées par leur emplacement. Les liens et formulaires de cet aperçu sont désactivés.</p>
+        <section className="content-panel"><h2 id="page-builder-preview-title">Aperçu du brouillon</h2><p>Les blocs éditoriaux utilisent le rendu de la page dans la largeur de ce panneau. Les fonctions existantes sont représentées par leur emplacement. Les liens et formulaires de cet aperçu sont désactivés.</p>
           <p className="field-hint">{dirty ? "Modifications non publiées" : layout.version === 0 ? "Mise en page initiale" : "Version publiée"}</p>
           {!pageKey.includes("[") && pageKey !== "/footer" ? <button onClick={() => {
             const target = resolvePortalAreaUrl(window.location.origin, area, pageKey);
             if (target) window.open(target, "_blank", "noopener,noreferrer");
           }} type="button">Voir la page actuelle</button> : null}
-          <div className={pageKey === "/footer" ? "page-builder-live-preview public-footer" : "page-builder-live-preview"}
-            data-testid="page-builder-draft-preview">
+          <div aria-labelledby="page-builder-preview-title"
+            className={pageKey === "/footer" ? "page-builder-live-preview public-footer" : "page-builder-live-preview"}
+            data-testid="page-builder-draft-preview" role="region" tabIndex={0}>
             <SitePageFrame area={area} pageKey={pageKey} initialLayout={layout} preview
               previewLabels={Object.fromEntries(allWidgets.map((item) => [item.value, item.label]))}>
               {null}
@@ -483,7 +484,7 @@ export function AdminPageBuilder() {
           </div>
         </section>
         <section className="content-panel"><h2>Médiathèque</h2><p>Images PNG, JPEG ou WebP de 5 Mo maximum.</p>
-          <input accept="image/png,image/jpeg,image/webp" onChange={(event) => setFile(event.target.files?.[0] ?? null)} type="file" />
+          <label>Choisir une image<input accept="image/png,image/jpeg,image/webp" onChange={(event) => setFile(event.target.files?.[0] ?? null)} type="file" /></label>
           <label>Description de l’image<input onChange={(event) => setAltText(event.target.value)} value={altText} /></label>
           <button disabled={!file || altText.trim().length < 3 || busy} onClick={() => void upload()} type="button">Ajouter l’image</button>
           <label>Rechercher une image<input onChange={(event) => setMediaQuery(event.target.value)}

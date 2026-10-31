@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { MetricCard } from "@/components/MetricCard";
@@ -62,7 +63,7 @@ export function DemoClientSpace({ section }: DemoClientSpaceProps) {
       <header className="demo-client-hero">
         <div>
           <span className="demo-client-mode">Compte de démonstration</span>
-          <h1>Découvrez l&apos;espace client Zachary IT</h1>
+          <AnimatedPublicH1 text="Découvrez l'espace client Zachary IT" />
           <p>
             Parcourez un compte fictif actif pour comprendre le suivi disponible
             après souscription : services, sauvegardes, stockage, factures,

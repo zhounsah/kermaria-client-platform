@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 import { ServiceBreadcrumb } from "@/components/PublicServiceComponents";
 import { PUBLIC_SITE_URL } from "@/lib/public-route-config";
 import { breadcrumbJsonLd, faqPageJsonLd, JsonLd } from "@/lib/seo";
@@ -58,7 +59,7 @@ export function PublicMessagingCategoryPage({
         <section className="service-hero messaging-category-hero">
           <div>
             <span className="card-kicker">{"Domaines & messagerie"}</span>
-            <h1>{"Votre domaine et vos e-mails doivent vous aider \u00e0 travailler, pas vous compliquer la vie."}</h1>
+            <AnimatedPublicH1 text={"Votre domaine et vos e-mails doivent vous aider \u00e0 travailler, pas vous compliquer la vie."} />
             <p>
               {"Adresse professionnelle, e-mails qui arrivent en spam, migration de bo\u00eetes, Microsoft 365 ou domaine difficile \u00e0 reprendre : partez de votre probl\u00e8me et choisissez la bonne porte d'entr\u00e9e."}
             </p>

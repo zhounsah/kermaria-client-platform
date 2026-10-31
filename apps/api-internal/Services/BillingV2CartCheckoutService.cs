@@ -196,6 +196,11 @@ public sealed class BillingV2CartCheckoutService : IBillingV2CartCheckoutService
 
         var items = await ReadItemsAsync(connection, command.CartId, cancellationToken);
         if (items.Count == 0) return new("CART_EMPTY", CartStatus: cart.Status, CartVersion: cart.Version);
+        if (items.Any(item => item.Origin == BillingV2CartItemOrigins.Direct
+            && (!item.DirectlyOrderable
+                || !BillingV2CartPolicy.IsDirectQuantityAllowed(
+                    item.Quantity, item.MinimumQuantity, item.MaximumQuantity))))
+            return new("CART_CHECKOUT_BLOCKED", CartStatus: cart.Status, CartVersion: cart.Version);
         var composition = BuildComposition(cart, quote, items);
         if (composition is null) return new("CART_QUOTE_CHANGED", CartStatus: cart.Status, CartVersion: cart.Version);
 
@@ -472,7 +477,13 @@ public sealed class BillingV2CartCheckoutService : IBillingV2CartCheckoutService
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT item.id, item.service_id, item.tier_id, item.quantity, item.scope_template,
-                   service.code AS service_code, tier.code AS tier_code
+                   service.code AS service_code, tier.code AS tier_code, item.origin,
+                   service.status AS service_status, service.public_visible,
+                   service.self_service_orderable, service.public_ordering_mode,
+                   service.configuration_policy, service.direct_minimum_quantity,
+                   service.direct_maximum_quantity, tier.status AS tier_status,
+                   tier.public_selectable, tier.direct_minimum_quantity AS tier_minimum,
+                   tier.direct_maximum_quantity AS tier_maximum
             FROM billing_v2_cart_items item
             JOIN billing_v2_services service ON service.id = item.service_id
             LEFT JOIN billing_v2_service_tiers tier ON tier.id = item.tier_id
@@ -488,7 +499,24 @@ public sealed class BillingV2CartCheckoutService : IBillingV2CartCheckoutService
                 MariaDbIdentifierReader.ReadRequired(reader, "service_id"),
                 MariaDbIdentifierReader.ReadNullable(reader, "tier_id"), reader.GetInt32("quantity"),
                 reader.GetString("scope_template"), reader.GetString("service_code"),
-                reader.IsDBNull(reader.GetOrdinal("tier_code")) ? null : reader.GetString("tier_code")));
+                reader.IsDBNull(reader.GetOrdinal("tier_code")) ? null : reader.GetString("tier_code"),
+                reader.IsDBNull(reader.GetOrdinal("origin")) ? BillingV2CartItemOrigins.Legacy : reader.GetString("origin"),
+                reader.GetString("service_status") == "active"
+                    && reader.GetBoolean("public_visible")
+                    && reader.GetBoolean("self_service_orderable")
+                    && !reader.IsDBNull(reader.GetOrdinal("public_ordering_mode"))
+                    && reader.GetString("public_ordering_mode") == BillingV2PublicOrderingModes.Direct
+                    && reader.GetString("configuration_policy") == BillingV2CartConfigurationPolicies.NotRequired
+                    && (reader.IsDBNull(reader.GetOrdinal("tier_id"))
+                        || (!reader.IsDBNull(reader.GetOrdinal("tier_status"))
+                            && reader.GetString("tier_status") == "active"
+                            && reader.GetBoolean("public_selectable"))),
+                reader.IsDBNull(reader.GetOrdinal("tier_minimum"))
+                    ? reader.GetInt32("direct_minimum_quantity")
+                    : Math.Max(reader.GetInt32("direct_minimum_quantity"), reader.GetInt32("tier_minimum")),
+                reader.IsDBNull(reader.GetOrdinal("tier_maximum"))
+                    ? reader.GetInt32("direct_maximum_quantity")
+                    : Math.Min(reader.GetInt32("direct_maximum_quantity"), reader.GetInt32("tier_maximum"))));
         }
         return items;
     }
@@ -547,7 +575,8 @@ public sealed class BillingV2CartCheckoutService : IBillingV2CartCheckoutService
         int? DiscountBasisPoints);
 
     private sealed record CartItemRecord(string Id, string ServiceId, string? TierId,
-        int Quantity, string ScopeTemplate, string ServiceCode, string? TierCode);
+        int Quantity, string ScopeTemplate, string ServiceCode, string? TierCode,
+        string Origin, bool DirectlyOrderable, int MinimumQuantity, int MaximumQuantity);
 
     private sealed record CartCheckoutStatusRecord(
         string CartId,

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 import type {
   BillingV2PublicCatalog,
   BillingV2PublicQuote,
@@ -287,7 +288,7 @@ function DiagnosticResult({
         <div className="diagnostic-result-main">
           <div className="diagnostic-result-heading">
             <span aria-hidden="true" className="diagnostic-result-icon">✓</span>
-            <div><p className="eyebrow">Votre première estimation</p><h1>{result.level}</h1></div>
+            <div><p className="eyebrow">Votre première estimation</p><AnimatedPublicH1 text={result.level} /></div>
           </div>
           <div aria-label={`Score global : ${result.score} sur 100`} className="diagnostic-score"><strong>{result.score}</strong><span>/ 100</span></div>
           <p className="diagnostic-result-lead">Ce résultat met en évidence les sujets à regarder en premier selon vos réponses. Un échange ou une visite peut être nécessaire pour confirmer certains points.</p>
@@ -423,6 +424,11 @@ function CallbackFormPanel({
   setCallbackState: (state: CallbackState) => void;
   updateForm: <Key extends keyof CallbackForm>(key: Key, value: CallbackForm[Key]) => void;
 }) {
+  const fieldErrorProps = (field: keyof DiagnosticCallbackFieldErrors) => ({
+    "aria-invalid": Boolean(errors[field]),
+    "aria-describedby": errors[field] ? `diagnostic-callback-${field}-error` : undefined,
+  });
+
   return (
     <section className="diagnostic-contact-panel" id="etre-rappele">
       <div className="diagnostic-contact-copy">
@@ -433,14 +439,14 @@ function CallbackFormPanel({
       <form className="form-card contact-form" noValidate onSubmit={onSubmit}>
         {callbackState === "success" ? <FormMessage ref={messageRef} title="Demande envoyée" tone="success"><p>Votre demande a bien été envoyée. Je vous recontacterai dès que possible.</p></FormMessage> : null}
         {callbackState === "error" ? <FormMessage ref={messageRef} title="Envoi impossible" tone="error"><p>Votre demande n&apos;a pas pu être transmise. Vérifiez les champs puis réessayez.</p></FormMessage> : null}
-        <CallbackField error={errors.name} label="Nom / prénom" required><input autoComplete="name" maxLength={120} onChange={(event) => updateForm("name", event.target.value)} value={form.name} /></CallbackField>
-        <CallbackField error={errors.phone} label="Téléphone" required><input autoComplete="tel" inputMode="tel" maxLength={40} onChange={(event) => updateForm("phone", event.target.value)} type="tel" value={form.phone} /></CallbackField>
-        <CallbackField error={errors.email} label="E-mail (facultatif)"><input autoComplete="email" maxLength={254} onChange={(event) => updateForm("email", event.target.value)} type="email" value={form.email} /></CallbackField>
-        {organisationVisible ? <CallbackField error={errors.organisation} label="Entreprise / organisation"><input maxLength={160} onChange={(event) => updateForm("organisation", event.target.value)} value={form.organisation} /></CallbackField> : null}
-        <CallbackField error={errors.preferredTime} label="Moment préféré pour être rappelé (facultatif)"><input maxLength={160} onChange={(event) => updateForm("preferredTime", event.target.value)} value={form.preferredTime} /></CallbackField>
-        <CallbackField error={errors.comment} label="Commentaire (facultatif)"><textarea maxLength={1200} onChange={(event) => updateForm("comment", event.target.value)} rows={4} value={form.comment} /></CallbackField>
-        <label className="diagnostic-consent"><input checked={form.consent} onChange={(event) => updateForm("consent", event.target.checked)} required type="checkbox" /><span>J&apos;accepte que Zachary IT utilise ces informations afin de me recontacter au sujet de cette demande.</span></label>
-        {errors.consent ? <span className="field-error">{errors.consent}</span> : null}
+        <CallbackField error={errors.name} field="name" label="Nom / prénom" required><input {...fieldErrorProps("name")} autoComplete="name" maxLength={120} onChange={(event) => updateForm("name", event.target.value)} required value={form.name} /></CallbackField>
+        <CallbackField error={errors.phone} field="phone" label="Téléphone" required><input {...fieldErrorProps("phone")} autoComplete="tel" inputMode="tel" maxLength={40} onChange={(event) => updateForm("phone", event.target.value)} required type="tel" value={form.phone} /></CallbackField>
+        <CallbackField error={errors.email} field="email" label="E-mail (facultatif)"><input {...fieldErrorProps("email")} autoComplete="email" maxLength={254} onChange={(event) => updateForm("email", event.target.value)} type="email" value={form.email} /></CallbackField>
+        {organisationVisible ? <CallbackField error={errors.organisation} field="organisation" label="Entreprise / organisation"><input {...fieldErrorProps("organisation")} maxLength={160} onChange={(event) => updateForm("organisation", event.target.value)} value={form.organisation} /></CallbackField> : null}
+        <CallbackField error={errors.preferredTime} field="preferredTime" label="Moment préféré pour être rappelé (facultatif)"><input {...fieldErrorProps("preferredTime")} maxLength={160} onChange={(event) => updateForm("preferredTime", event.target.value)} value={form.preferredTime} /></CallbackField>
+        <CallbackField error={errors.comment} field="comment" label="Commentaire (facultatif)"><textarea {...fieldErrorProps("comment")} maxLength={1200} onChange={(event) => updateForm("comment", event.target.value)} rows={4} value={form.comment} /></CallbackField>
+        <label className="diagnostic-consent"><input {...fieldErrorProps("consent")} checked={form.consent} onChange={(event) => updateForm("consent", event.target.checked)} required type="checkbox" /><span>J&apos;accepte que Zachary IT utilise ces informations afin de me recontacter au sujet de cette demande.</span></label>
+        {errors.consent ? <span className="field-error" id="diagnostic-callback-consent-error">{errors.consent}</span> : null}
         <label aria-hidden="true" className="diagnostic-honeypot">Ne pas remplir ce champ<input autoComplete="off" onChange={(event) => updateForm("website", event.target.value)} tabIndex={-1} value={form.website} /></label>
         <div className="diagnostic-callback-actions"><button className="button" disabled={callbackState === "submitting"} type="submit">{callbackState === "submitting" ? "Envoi en cours…" : "Envoyer ma demande"}</button>{callbackState === "open" || callbackState === "error" ? <button className="text-link" onClick={() => setCallbackState("idle")} type="button">Annuler</button> : null}</div>
       </form>
@@ -448,6 +454,6 @@ function CallbackFormPanel({
   );
 }
 
-function CallbackField({ children, error, label, required = false }: { children: ReactNode; error?: string; label: string; required?: boolean }) {
-  return <label>{label}{required ? " *" : ""}{children}{error ? <span className="field-error">{error}</span> : null}</label>;
+function CallbackField({ children, error, field, label, required = false }: { children: ReactNode; error?: string; field: keyof DiagnosticCallbackFieldErrors; label: string; required?: boolean }) {
+  return <label>{label}{required ? " *" : ""}{children}{error ? <span className="field-error" id={`diagnostic-callback-${field}-error`}>{error}</span> : null}</label>;
 }

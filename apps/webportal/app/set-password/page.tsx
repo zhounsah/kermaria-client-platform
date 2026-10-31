@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 
 import { SetPasswordForm } from "@/components/SetPasswordForm";
 import { resolveCorrelationId } from "@/lib/correlation";
@@ -91,7 +92,7 @@ export default async function SetPasswordPage({
       <div className="set-password-page">
         <header className="signup-header">
           <p className="eyebrow">Activation du compte</p>
-          <h1>{presentation.title}</h1>
+          <AnimatedPublicH1 text={presentation.title} />
         </header>
 
         <section className="set-password-invalid">
@@ -144,7 +145,7 @@ export default async function SetPasswordPage({
     <div className="set-password-page">
       <header className="signup-header">
         <p className="eyebrow">Activation du compte</p>
-        <h1>{valid ? "Définir votre mot de passe" : "Définition impossible"}</h1>
+        <AnimatedPublicH1 text={valid ? "Définir votre mot de passe" : "Définition impossible"} />
         {valid ? (
           isAdditionalUserFlow ? (
             <p className="signup-lead">

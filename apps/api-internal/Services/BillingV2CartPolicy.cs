@@ -55,6 +55,10 @@ public static class BillingV2CatalogScopeTemplatePolicy
 /// </summary>
 public static class BillingV2CartPolicy
 {
+    public static bool IsDirectQuantityAllowed(int quantity, int minimum, int maximum)
+        => minimum >= 1 && maximum <= 10000 && minimum <= maximum
+            && quantity >= minimum && quantity <= maximum;
+
     private static readonly IReadOnlySet<string> ValidScopes = new HashSet<string>(StringComparer.Ordinal)
     {
         BillingV2CartScopeTemplates.Subscription,

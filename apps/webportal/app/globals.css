@@ -3291,7 +3291,8 @@ fieldset.form-field > .form-hint {
 .commercial-tariff-actions .service-inline-link { margin-top: 0; }
 .commercial-tariff-direct-add { display: grid; gap: 10px; }
 .commercial-tariff-direct-add label { display: grid; gap: 5px; color: var(--muted); font-size: .84rem; font-weight: 700; }
-.commercial-tariff-direct-add select { min-height: 42px; width: 100%; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 9px; color: var(--text); background: var(--surface); font: inherit; }
+.commercial-tariff-direct-add select,
+.commercial-tariff-direct-add input[type="number"] { min-height: 42px; width: 100%; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 9px; color: var(--text); background: var(--surface); font: inherit; }
 .commercial-tariff-direct-price { margin: 0; color: var(--primary-dark); font-size: .92rem; font-weight: 700; }
 .commercial-tariff-direct-feedback { margin: 0; color: var(--muted); font-size: .84rem; line-height: 1.5; }
 .commercial-tariff-direct-feedback a { color: var(--primary-dark); font-weight: 700; }

@@ -1698,14 +1698,14 @@ function createComparisonValue(
 
 export const DEFAULT_PUBLIC_PACK_CATALOG_CONTENT: PublicPackCatalogContentPayload = {
   pageEyebrow: "Catalogue des offres",
-  pageTitle: "Des offres simples pour sauvegarder, stocker et reprendre plus vite",
+  pageTitle: "Des offres pour protéger vos données et organiser l'accès à vos outils",
   pageDescription:
-    "Comparez les offres destinées à protéger vos documents importants, vos sauvegardes et la continuité d'une petite activité à partir de repères clairs.",
+    "Comparez les services inclus, les options et le point de départ tarifaire avant de configurer l'offre adaptée à votre usage.",
   comparisonColumnLabel: "Repères utiles",
   footnotePrimary:
-    "Les tarifs affichés sont hors taxes et correspondent au catalogue public actuel. La mise en service et le support sont organisés selon l'offre retenue.",
+    "Les prix de départ affichés sont calculés par le catalogue actuel. Le montant final dépend des options choisies et est confirmé avant la souscription.",
   footnoteSecondary:
-    "Besoin d'un dossier de secours numérique ou d'un accompagnement spécifique ? Passez par le formulaire de contact.",
+    "Pour un besoin qui ne correspond pas aux offres publiées, décrivez votre projet dans le formulaire de contact.",
   packs: PUBLIC_PACKS.map((pack) => ({
     packCode: pack.key,
     label: pack.label,
@@ -2459,6 +2459,9 @@ export interface BillingV2PublicTierAttribute {
 
 export interface BillingV2PublicTier {
   code: string;
+  /** Bornes du palier pour une commande directe, revalidées par API-INTERNAL. */
+  directMinimumQuantity?: number;
+  directMaximumQuantity?: number;
   label: string;
   description: string | null;
   numericValue: number | null;
@@ -2508,6 +2511,9 @@ export interface BillingV2PublicService {
    * son absence est interprétée de façon fermée par le portail.
    */
   cartDirectEligible?: boolean;
+  /** Bornes de quantité pour une sélection directe, issues du catalogue. */
+  directMinimumQuantity?: number;
+  directMaximumQuantity?: number;
 }
 
 export interface BillingV2PublicPresetItem {
@@ -2586,6 +2592,8 @@ export type PublicCommercialMoney = {
 
 export type PublicCommercialTier = {
   id: string;
+  directMinimumQuantity?: number;
+  directMaximumQuantity?: number;
   label: string;
   description: string | null;
   /** Décision de catalogue ; le navigateur ne peut jamais rendre un palier sélectionnable. */
@@ -2603,6 +2611,9 @@ export type PublicCommercialCta = {
 export type PublicCommercialService = {
   /** Identifiant stable Billing V2, jamais affiche comme vocabulaire client. */
   id: string;
+  /** Bornes de quantité directe publiées par Billing V2. */
+  directMinimumQuantity?: number;
+  directMaximumQuantity?: number;
   slug: string;
   name: string;
   /** Libellé du contrôle de tier, jamais déduit d'un code de service côté UI. */

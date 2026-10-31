@@ -27,11 +27,24 @@ public static class BillingV2CartPolicyTests
         PresetDefinitionRetainsSelectionAndQuantityPolicy();
         RequiredPresetItemsAreInjectedIntoFormulaComposition();
         DirectCartMergeIsDeterministic();
+        DirectQuantityUsesCatalogBounds();
         CartMutationResultHttpMappingIsCentralized();
         CheckoutRecoveryIsReadOnlyAndStateful();
         CartModelNeverContainsFinancialAuthority();
         CartModuleHasNoFinancialOrProviderDependency();
         return Task.CompletedTask;
+    }
+
+    private static void DirectQuantityUsesCatalogBounds()
+    {
+        Ensure(BillingV2CartPolicy.IsDirectQuantityAllowed(1, 1, 1)
+            && !BillingV2CartPolicy.IsDirectQuantityAllowed(2, 1, 1)
+            && BillingV2CartPolicy.IsDirectQuantityAllowed(3, 1, 10000)
+            && BillingV2CartPolicy.IsDirectQuantityAllowed(10, 1, 10)
+            && !BillingV2CartPolicy.IsDirectQuantityAllowed(11, 1, 10)
+            && !BillingV2CartPolicy.IsDirectQuantityAllowed(10001, 1, 10000)
+            && !BillingV2CartPolicy.IsDirectQuantityAllowed(1, 0, 10000),
+            "Les quantites directes respectent les bornes serveur du catalogue.");
     }
 
     private static void AnonymousOwnerIsHashed()

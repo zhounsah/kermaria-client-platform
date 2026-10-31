@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 import {
   ArrowRight,
   Check,
@@ -68,7 +69,7 @@ export function ServiceHero({
   return (
     <header className={compact ? "service-hero service-hero-compact" : "service-hero"}>
       <div>
-        <h1>{title}</h1>
+        <AnimatedPublicH1 text={title} />
         <p>{description}</p>
       </div>
       <Link className="button" href={action.href}>

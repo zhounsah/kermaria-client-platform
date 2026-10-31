@@ -58,7 +58,7 @@ assert.deepEqual(
 );
 assert.equal(transitional.sections.length, 1);
 assert.equal(transitional.sections[0].heading, "Une aide adaptée à votre situation");
-assert.match(transitional.lead, /Partez de votre besoin/);
+assert.match(transitional.lead, /identifions le problème/);
 assert.doesNotMatch(JSON.stringify(transitional.sections), /Ce que Zachary IT prend en charge|Choisir le bon point de départ/);
 
 const oldPublicText = {
@@ -139,7 +139,7 @@ assert.match(servicesPage, /<PublicServicesLandingPage/);
 assert.match(servicesPage, /parseStorefrontServicesLandingContent\(contentResult\.data\.bodyMarkdown, true\)/);
 assert.doesNotMatch(servicesPage, /resolveStorefrontServicesLandingActions|getBillingV2FormulesCatalog|<PublicStorefrontPage/);
 
-assert.match(renderer, /<h1>\{content\.title\}<\/h1>/);
+assert.match(renderer, /<AnimatedPublicH1 text=\{content\.title\} \/>/);
 assert.match(renderer, /Quel problème cherchez-vous à résoudre/);
 assert.match(renderer, /content\.problemEntries\.map/);
 assert.match(renderer, /<ServiceCategoryCard/);
@@ -172,6 +172,13 @@ assert.match(seed, /\["storefront:services"\] = PageOf\(/);
 assert.match(seed, /problemEntries:/);
 assert.match(seed, /P\("Je dois travailler à distance"/);
 assert.match(seed, /L\("Support & IT", "\/services\/support-it"\)/);
+
+const remoteAccessGuide = await read("app/vpn-ou-bureau-a-distance-que-choisir/page.tsx");
+assert.match(remoteAccessGuide, /VPN ou bureau Windows à distance : que choisir/);
+assert.match(remoteAccessGuide, /href="\/services\/vpn-entreprise"/);
+assert.match(remoteAccessGuide, /href="\/services\/bureau-windows-distance"/);
+assert.match(await read("lib/public-route-config.ts"), /"\/vpn-ou-bureau-a-distance-que-choisir"/);
+assert.match(await read("app/sitemap.ts"), /path: "\/vpn-ou-bureau-a-distance-que-choisir"/);
 
 assert.match(styles, /\.service-overview-grid\.services-problem-grid/);
 assert.match(styles, /@media \(max-width: 820px\)[\s\S]*repeat\(2, minmax\(0, 1fr\)\)/);

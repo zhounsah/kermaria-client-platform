@@ -5,7 +5,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { CmsConfigurableForm } from "@/components/CmsConfigurableForm";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
+import { VitrineHero } from "@/components/VitrineHero";
 import { requestBffJson } from "@/lib/client-api";
+import { presentPublicSiteLayout } from "@/lib/public-site-editorial";
 
 export function SitePageFrame({ area, pageKey, children, initialLayout, slots, className,
   preview = false, previewLabels }: {
@@ -30,10 +33,11 @@ export function SitePageFrame({ area, pageKey, children, initialLayout, slots, c
   }, [area, pageKey, initialLayout]);
 
   if (!layout || layout.area !== area || layout.pageKey !== pageKey) return <>{children}</>;
+  const presentedLayout = presentPublicSiteLayout(layout);
   return <div aria-hidden={preview || undefined}
     className={`site-page-frame${preview ? " site-page-draft-preview" : ""}${className ? ` ${className}` : ""}`}
     inert={preview || undefined}>
-    {layout.blocks.map((block) => block.type === "route_content"
+    {presentedLayout.blocks.map((block) => block.type === "route_content"
       ? preview
         ? <div className="page-builder-preview-block page-builder-preview-core" key={block.id}>
             <strong>Contenu et actions actuels</strong>
@@ -58,18 +62,15 @@ function SitePageBlockView({ block, area, slots, preview, previewLabels }: {
     ? <div className={`site-page-widget site-page-widget-${block.widgetKey}`}>
         {slots[block.widgetKey]}
       </div> : null;
-  if (block.type === "hero") return <section className="vitrine-hero-band">
-    <div className="vitrine-hero vitrine-hero-2026" style={block.mediaId ? { backgroundImage: `url(/api/site-media/${encodeURIComponent(block.mediaId)})` } : undefined}>
-      <div className="vitrine-hero-copy"><h1>{block.title}</h1><p className="vitrine-hero-lead">{block.body}</p>
-        <div className="vitrine-hero-actions">
-          {block.href ? <Link className="button" href={block.href}>{block.label ?? "Découvrir"}</Link> : null}
-          {items[0]?.href ? <Link className="button button-secondary" href={items[0].href}>{items[0].title}</Link> : null}
-        </div></div><div aria-hidden="true" className="vitrine-hero-photo-spacer" />
-    </div></section>;
+  if (block.type === "hero") return <VitrineHero
+    body={block.body ?? ""} title={block.title ?? ""} mediaId={block.mediaId}
+    primary={block.href ? { href: block.href, label: block.label ?? "Découvrir" } : undefined}
+    secondary={items[0]?.href ? { href: items[0].href, label: items[0].title } : undefined}
+  />;
   if (block.type === "audiences") return <section className="vitrine-audiences vitrine-audiences-first">
     <header className="vitrine-section-header"><h2>{block.title}</h2><p>{block.body}</p></header>
     <ul className="vitrine-audiences-grid">{items.map((item, index) => <li className="vitrine-audience-card" key={`${item.title}-${index}`}>
-      <h3>{item.title}</h3><p>{item.body}</p>{item.href ? <Link href={item.href}>{item.label ?? "Voir les solutions"}</Link> : null}
+      <h3>{item.title}</h3><p>{item.body}</p>{item.href ? <Link href={item.href}>{item.label ?? "Explorer les services"}</Link> : null}
     </li>)}</ul></section>;
   if (block.type === "steps") return <section className="vitrine-method">
     <header className="vitrine-section-header"><h2>{block.title}</h2>{block.body ? <p>{block.body}</p> : null}</header>
@@ -79,7 +80,7 @@ function SitePageBlockView({ block, area, slots, preview, previewLabels }: {
   if (block.type === "services") return <section className="vitrine-services">
     <header className="vitrine-section-header"><h2>{block.title}</h2><p className="vitrine-section-lead">{block.body}</p></header>
     <ul className="vitrine-services-grid">{items.map((item, index) => <li className="vitrine-service-card" key={`${item.title}-${index}`}>
-      <h3>{item.title}</h3><p>{item.body}</p>{item.href ? <Link href={item.href}>En savoir plus</Link> : null}
+      <h3>{item.title}</h3><p>{item.body}</p>{item.href ? <Link href={item.href}>Voir le service <span aria-hidden="true">→</span></Link> : null}
     </li>)}</ul></section>;
   if (block.type === "offer_path") return <section className="vitrine-offer-path">
     <header className="vitrine-section-header"><h2>{block.title}</h2><p>{block.body}</p></header>
@@ -97,7 +98,7 @@ function SitePageBlockView({ block, area, slots, preview, previewLabels }: {
   </section>;
   if (block.type === "diagnostic_intro") return <header className="diagnostic-header">
     <div className="diagnostic-header-copy"><span aria-hidden="true" className="diagnostic-header-icon">✓</span>
-      <div><p className="eyebrow">Trouver ma solution</p><h1>{block.title}</h1><p>{block.body}</p></div>
+      <div><p className="eyebrow">Trouver ma solution</p>{preview ? <h1>{block.title}</h1> : <AnimatedPublicH1 text={block.title ?? ""} />}<p>{block.body}</p></div>
     </div>
     <div aria-label="Fonctionnement" className="diagnostic-benefits">
       {items.map((item, index) => <article key={`${item.title}-${index}`}>
@@ -107,11 +108,11 @@ function SitePageBlockView({ block, area, slots, preview, previewLabels }: {
     </div>
   </header>;
   if (block.type === "contact_intro") return <header className="contact-header">
-    <p className="eyebrow">Contact</p><h1>{block.title}</h1>
+    <p className="eyebrow">Contact</p>{preview ? <h1>{block.title}</h1> : <AnimatedPublicH1 text={block.title ?? ""} />}
     <p className="contact-lead">{block.body}</p>
   </header>;
   if (block.type === "data_rights_intro") return <header className="data-request-intro">
-    <h1>{block.title}</h1><p>{block.body}</p>
+    {preview ? <h1>{block.title}</h1> : <AnimatedPublicH1 text={block.title ?? ""} />}<p>{block.body}</p>
   </header>;
   if (block.type === "contact_steps") return <section aria-labelledby={`contact-steps-${block.id}`} className="signup-steps-card">
     <h2 id={`contact-steps-${block.id}`}>{block.title}</h2>

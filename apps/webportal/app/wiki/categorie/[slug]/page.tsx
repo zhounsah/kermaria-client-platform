@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 
 import { getPublicWikiHome } from "@/lib/internal-api";
 import { getWikiRobots, wikiCanonical } from "@/lib/wiki-seo";
@@ -44,7 +45,7 @@ export default async function WikiCategoryPage({
       <header className="wiki-header">
         <Link className="text-link" href="/wiki">Retour au wiki</Link>
         <p className="eyebrow">Catégorie</p>
-        <h1>{category.name}</h1>
+        <AnimatedPublicH1 text={category.name} />
         {category.description ? <p>{category.description}</p> : null}
       </header>
 

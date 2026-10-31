@@ -43,6 +43,7 @@
     "test:koxo": "node scripts/verify-koxo-contract.mjs",
     "test:email-live": "node scripts/verify-email-live-contract.mjs",
     "test:catalog": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-billing-v2-catalog-contract.mjs && node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-public-commercial-ordering-model.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-public-commercial-catalog-contract.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-admin-catalog-ui-contract.mjs",
+    "test:assistance": "node scripts/verify-assistance-pages-contract.mjs && node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-assistance-contact-context.mjs",
     "test:formules": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-formules-contract.mjs",
     "test:formules-cart-handoff": "node scripts/verify-formules-cart-handoff.mjs",
     "test:client-solutions": "node scripts/verify-client-solutions-contract.mjs",
@@ -53,12 +54,13 @@
     "test:client-vps": "node scripts/verify-client-vps-contract.mjs",
     "test:local-navigation": "node scripts/verify-local-navigation-contract.mjs",
     "test:navigation": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-public-navigation-contract.mjs",
+    "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@kermaria/shared": "0.1.0",
     "lucide-react": "^1.33.0",
-    "next": "16.3.8",
+    "next": "16.4.3",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "react-markdown": "^10.1.0",
@@ -66,11 +68,12 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/node": "24.13.2",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.3.8",
+    "eslint-config-next": "16.4.3",
     "typescript": "6.0.3"
   }
 }

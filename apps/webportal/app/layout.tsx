@@ -11,6 +11,8 @@ import {
 import { PUBLIC_BRAND_NAME, PUBLIC_SITE_NAME } from "@/lib/public-metadata";
 import { PUBLIC_SITE_URL } from "@/lib/public-route-config";
 import "./globals.css";
+import "./site-refonte.css";
+import "./site-motion.css";
 
 const inter = localFont({
   src: "../assets/fonts/inter-latin-variable.woff2",
@@ -22,14 +24,15 @@ const inter = localFont({
 const jetbrainsMono = localFont({
   src: "../assets/fonts/jetbrains-mono-latin-variable.woff2",
   display: "swap",
+  preload: false,
   weight: "100 800",
   variable: "--font-jetbrains-mono",
 });
 
 const SITE_TITLE =
-  "Sauvegarde distante et continuité d'activité à Guichen (35)";
+  "Maintenance, réseau et sauvegarde informatique à Guichen (35)";
 const SITE_DESCRIPTION =
-  "Sauvegarde distante, stockage documentaire et continuité d'activité à Guichen pour particuliers, associations et petites entreprises.";
+  "Zachary IT accompagne professionnels, indépendants et petites structures pour la maintenance informatique, le réseau, la sauvegarde et l'accès à distance.";
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
@@ -88,7 +91,7 @@ export default async function RootLayout({
   const localPortalOrigin = getDevelopmentLocalPortalOrigin();
 
   return (
-    <html lang="fr">
+    <html data-scroll-behavior="smooth" lang="fr">
       <body className={`${inter.variable} ${jetbrainsMono.variable}`}>
         <DeploymentEnvironmentBanner />
         <AppShell

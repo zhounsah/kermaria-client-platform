@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 
 import { ManagedMarkdown } from "@/components/ManagedMarkdown";
 import { getPublicWikiArticle } from "@/lib/internal-api";
@@ -61,7 +62,7 @@ export default async function WikiArticlePage({
         {article.categoryName ? (
           <p className="eyebrow">{article.categoryName}</p>
         ) : null}
-        <h1>{article.title}</h1>
+        <AnimatedPublicH1 text={article.title} />
         {article.summary ? <p>{article.summary}</p> : null}
         <p className="managed-content-updated">
           Dernière mise à jour :{" "}

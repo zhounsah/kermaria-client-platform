@@ -129,7 +129,7 @@ assert.match(signupVerifyPage, /result\.selfServiceFlow === "cart"[\s\S]*resolve
   "La continuation Cart est affichee seulement apres un resultat de verification self-service Cart confirme par le serveur.");
 assert.match(signupVerifyPage, /Votre compte est prêt\. Vous pouvez maintenant reprendre votre commande\.[\s\S]*Continuer ma souscription/,
   "Le workflow Cart verifie doit rendre son CTA commercial dedie.");
-assert.match(signupVerifyPage, /resolveSelfServiceVpsSignupContinuation\(next\)[\s\S]*Reprendre mon VPS/,
+assert.match(signupVerifyPage, /resolveSelfServiceVpsSignupContinuation\(next\)[\s\S]*Reprendre mon serveur/,
   "Le workflow VPS garde sa continuation distincte et validee.");
 assert.match(signupVerifyPage, /en attente de validation par notre équipe/,
   "Le workflow standard conserve le message historique d'approbation humaine.");

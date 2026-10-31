@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
 import { connection } from "next/server";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 
 import { ManagedMarkdown } from "@/components/ManagedMarkdown";
 import {
@@ -67,7 +68,7 @@ export default async function EditorialSeoPage({
     <article className="seo-editorial-page">
       <header className="seo-editorial-header">
         {page.categoryName ? <p className="eyebrow">{page.categoryName}</p> : null}
-        <h1>{page.title}</h1>
+        <AnimatedPublicH1 text={page.title} />
         {page.summary ? (
           <p className="seo-editorial-summary">{page.summary}</p>
         ) : null}

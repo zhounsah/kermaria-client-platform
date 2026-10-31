@@ -26,6 +26,7 @@ const [
   robots,
   sitemap,
   styles,
+  vitrineHero,
 ] = await Promise.all([
   read("app/page.tsx"),
   read("components/PublicShell.tsx"),
@@ -47,6 +48,7 @@ const [
   read("app/robots.ts"),
   read("app/sitemap.ts"),
   read("app/globals.css"),
+  read("components/VitrineHero.tsx"),
 ]);
 
 for (const [label, source] of [
@@ -55,12 +57,18 @@ for (const [label, source] of [
   ["ressources", ressourcesPage],
 ]) {
   assert.match(source, /buildPublicMetadata\(/, `${label} doit utiliser le helper SEO public.`);
-  assert.match(source, /<h1\b/, `${label} doit exposer un H1 explicite.`);
+  if (label === "accueil") {
+    assert.match(source, /<VitrineHero\b/, "l'accueil doit afficher le héros commun.");
+  } else {
+    assert.match(source, /<(?:h1|AnimatedPublicH1)\b/, `${label} doit exposer un H1 explicite.`);
+  }
 }
+assert.match(vitrineHero, /<h1\b/, "le héros commun doit exposer un H1 explicite.");
+assert.match(sitePageFrame, /block\.type === "hero"[\s\S]{0,100}<VitrineHero/, "le héros CMS doit utiliser le même H1.");
 assert.match(contactPage, /buildPublicMetadata\(/, "contact doit utiliser le helper SEO public.");
 assert.match(contactPage, /pageKey="\/contact"/, "contact doit utiliser sa mise en page publiée.");
 assert.match(sitePageFrame,
-  /block\.type === "contact_intro"[\s\S]{0,300}<h1>\{block\.title\}<\/h1>/,
+  /block\.type === "contact_intro"[\s\S]{0,350}<AnimatedPublicH1 text=\{block\.title \?\? ""\}/,
   "le titre éditable du contact doit rester un H1 explicite.");
 
 assert.match(publicMetadata, /alternates:\s*\{\s*canonical:\s*path\s*\}/);
@@ -130,6 +138,14 @@ assert.match(contactForm, /aria-describedby=/);
 assert.match(contactForm, /formuleCode/);
 assert.doesNotMatch(contactForm, /localStorage|sessionStorage|SERVICE_AUTH_TOKEN|INTERNAL_API_URL/);
 
+// Le chargement global apparaît aussi sur la vitrine. Il réserve l'écran pour
+// éviter que le footer entre brièvement dans le viewport avant le vrai contenu.
+const loadingPage = await read("app/loading.tsx");
+assert.match(loadingPage, /minHeight:\s*"100vh"/);
+assert.match(loadingPage, /Chargement de la page/);
+assert.doesNotMatch(loadingPage, /Votre espace client/);
+assert.match(vitrineHero, /fetchPriority="high"/);
+
 for (const [path, key] of [
   ["app/a-propos/page.tsx", "page:a-propos"],
   ["app/infrastructure/page.tsx", "page:infrastructure"],
@@ -156,7 +172,7 @@ for (const path of [
 }
 
 assert.match(notFoundPage, /robots:\s*\{\s*index:\s*false,\s*follow:\s*false\s*\}/);
-assert.match(notFoundPage, /<h1 id="not-found-title">/);
+assert.match(notFoundPage, /<AnimatedPublicH1 id="not-found-title"/);
 assert.match(notFoundPage, /href="\/offres"/);
 assert.match(notFoundPage, /href="\/contact"/);
 

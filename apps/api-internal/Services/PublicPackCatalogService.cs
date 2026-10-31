@@ -157,11 +157,11 @@ public sealed partial class PublicPackCatalogService : IPublicPackCatalogService
     private static PublicPackCatalogContent CreateDefaultContent()
         => new(
             "Catalogue des offres",
-            "Des offres simples, lisibles et prêtes à activer",
-            "Comparez les offres, choisissez votre durée d'engagement, puis lancez votre demande à partir d'un périmètre clair.",
+            "Des offres pour protéger vos données et organiser l'accès à vos outils",
+            "Comparez les services inclus, les options et le point de départ tarifaire avant de configurer l'offre adaptée à votre usage.",
             "Fonctionnalités clés",
-            "Les tarifs affichés sont hors taxes et correspondent au catalogue public actuel. La mise en service et le support sont organisés selon l'offre retenue.",
-            "Besoin d'un accompagnement spécifique ? Passez par le formulaire de contact.",
+            "Les prix de départ affichés sont calculés par le catalogue actuel. Le montant final dépend des options choisies et est confirmé avant la souscription.",
+            "Pour un besoin qui ne correspond pas aux offres publiées, décrivez votre projet dans le formulaire de contact.",
             AllowedPackCodes.Select(code => DefaultPacks[code]).ToArray(),
             [
                 CreateComparisonRow(

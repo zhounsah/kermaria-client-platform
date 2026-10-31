@@ -454,20 +454,20 @@ public sealed class BillingV2CartService : IBillingV2CartService
             await InsertDirectItemAsync(connection, transaction, cart.Id, resolved,
                 command, displayOrder++, now, token);
 
-            // `mandatory_for_subscription` porte le socle global Billing V2.
-            // Le navigateur n'envoie jamais ce composant : il est compose une
-            // unique fois ici, y compris lorsqu'un Cart a ete initialise par
-            // une formule et reçoit ensuite une ligne directe.
-            var structural = await EnsureMandatoryStructuralItemsAsync(connection,
-                transaction, cart, displayOrder, now, token);
-            if (structural.Code != "CART_ITEM_ADDED") return structural.Code;
+            // Le catalogue decide si la selection directe exige le socle.
+            // Les services historiques gardent cette obligation par defaut.
+            var structural = resolved.RequiresSubscriptionBase
+                ? await EnsureMandatoryStructuralItemsAsync(connection,
+                    transaction, cart, displayOrder, now, token)
+                : ("CART_ITEM_ADDED", displayOrder);
+            if (structural.Item1 != "CART_ITEM_ADDED") return structural.Item1;
             // Une dependance ne devient automatique que lorsque le catalogue
             // donne une resolution unique. Sinon elle reste une issue
             // structuree dans le quote, jamais un choix arbitraire du client.
             return await AddDeterministicDependenciesAsync(connection, transaction, cart,
                 new DependencyNode(resolved.ServiceId!, resolved.TierId,
                     resolved.ScopeTemplate!, command.SubjectBinding, command.Quantity),
-                structural.NextDisplayOrder, now, token);
+                structural.Item2, now, token);
         }, cancellationToken);
 
     public Task<BillingV2CartMutationResult> UpdateItemAsync(BillingV2CartOwner owner,
@@ -537,6 +537,15 @@ public sealed class BillingV2CartService : IBillingV2CartService
             update.Parameters.AddWithValue("@id", itemId);
             update.Parameters.AddWithValue("@cart_id", cart.Id);
             await update.ExecuteNonQueryAsync(token);
+            // Un changement de service par mise a jour doit appliquer les memes
+            // obligations de socle qu'un ajout direct.
+            if (command.Origin == BillingV2CartItemOrigins.Direct && resolved.RequiresSubscriptionBase)
+            {
+                var nextOrder = cart.Items.Count == 0 ? 1 : cart.Items.Max(item => item.DisplayOrder) + 1;
+                var structural = await EnsureMandatoryStructuralItemsAsync(connection,
+                    transaction, cart, nextOrder, now, token);
+                if (structural.Code != "CART_ITEM_ADDED") return structural.Code;
+            }
             var synchronized = await SynchronizeSameNumericDependentsAsync(connection, transaction, cart,
                 existing with { TierId = resolved.TierId, TierCode = command.TierCode }, token);
             if (!synchronized) return "CART_DEPENDENCY_IMPOSSIBLE";
@@ -1104,6 +1113,14 @@ public sealed class BillingV2CartService : IBillingV2CartService
             var tier = item.TierCode is null
                 ? null
                 : service.Tiers.FirstOrDefault(candidate => candidate.Code == item.TierCode);
+            if (item.Origin == BillingV2CartItemOrigins.Direct
+                && (!service.CartDirectEligible
+                    || !BillingV2CartPolicy.IsDirectQuantityAllowed(
+                        item.Quantity, item.MinimumQuantity, item.MaximumQuantity)))
+            {
+                issues.Add(Issue("CART_DIRECT_NOT_ELIGIBLE", item, true));
+                continue;
+            }
             var components = tier is null && item.TierCode is null
                 ? service.FlatComponents
                 : tier?.Components;
@@ -1332,21 +1349,11 @@ public sealed class BillingV2CartService : IBillingV2CartService
     {
         if (string.IsNullOrWhiteSpace(command.ServiceCode) || command.Quantity is < 1 or > 10000)
             return new("CART_ITEM_INVALID");
-        // Les bornes de quantite existantes sont portees par les lignes de
-        // preset. Le catalogue direct ne possede pas encore de policy de
-        // volume par service : accepter 1..10000 reviendrait a inventer une
-        // regle commerciale. Le direct est donc strictement unitaire tant
-        // qu'une metadata catalogue explicite ne le rend pas quantifiable.
-        if (string.Equals(command.Origin, BillingV2CartItemOrigins.Direct,
-                StringComparison.Ordinal)
-            && command.Quantity != 1)
-        {
-            return new("CART_DIRECT_QUANTITY_NOT_CONFIGURED");
-        }
         await using var lookup = connection.CreateCommand(); lookup.Transaction = transaction;
         lookup.CommandText = """
             SELECT id, default_scope_type, pricing_model, public_visible,
-                   self_service_orderable, public_ordering_mode, configuration_policy
+                   self_service_orderable, public_ordering_mode, configuration_policy,
+                   direct_minimum_quantity, direct_maximum_quantity, requires_subscription_base
             FROM billing_v2_services WHERE code = @code AND status = 'active';
             """;
         lookup.Parameters.AddWithValue("@code", command.ServiceCode.Trim());
@@ -1355,10 +1362,15 @@ public sealed class BillingV2CartService : IBillingV2CartService
         var serviceId = Identifier(reader, 0); var scope = reader.GetString(1); var tiered = reader.GetString(2) == "tiered";
         var visible = reader.GetBoolean(3); var selfService = reader.GetBoolean(4); var mode = reader.GetString(5);
         var configurationPolicy = reader.GetString(6);
+        var minimumQuantity = reader.GetInt32(7); var maximumQuantity = reader.GetInt32(8);
+        var requiresSubscriptionBase = reader.GetBoolean(9);
         // Les verifications suivantes lancent d'autres commandes sur la meme
         // transaction. Fermer explicitement le reader avant tout lookup afin
         // de rester compatible avec MySqlConnector sans lecteurs multiples.
         await reader.DisposeAsync();
+        if (command.Origin == BillingV2CartItemOrigins.Direct
+            && !BillingV2CartPolicy.IsDirectQuantityAllowed(command.Quantity, minimumQuantity, maximumQuantity))
+            return new("CART_DIRECT_QUANTITY_NOT_CONFIGURED");
         if (!visible) return new("CART_SERVICE_NOT_PUBLIC");
         if (command.Origin == "direct"
             && (mode != BillingV2PublicOrderingModes.Direct || !selfService))
@@ -1376,10 +1388,25 @@ public sealed class BillingV2CartService : IBillingV2CartService
         if (tiered != !string.IsNullOrWhiteSpace(command.TierCode)) return new("CART_TIER_REQUIRED_OR_FORBIDDEN");
         if (command.TierCode is not null)
         {
-            tierId = await LookupIdAsync(connection, transaction,
-                "SELECT id FROM billing_v2_service_tiers WHERE service_id = @service_id AND code = @code AND status = 'active' AND public_selectable = 1;",
-                command.TierCode.Trim(), cancellationToken, serviceId);
-            if (tierId is null) return new("CART_TIER_INVALID");
+            await using var tierLookup = connection.CreateCommand();
+            tierLookup.Transaction = transaction;
+            tierLookup.CommandText = """
+                SELECT id, direct_minimum_quantity, direct_maximum_quantity
+                FROM billing_v2_service_tiers
+                WHERE service_id = @service_id AND code = @code
+                  AND status = 'active' AND public_selectable = 1;
+                """;
+            tierLookup.Parameters.AddWithValue("@service_id", serviceId);
+            tierLookup.Parameters.AddWithValue("@code", command.TierCode.Trim());
+            await using var tierReader = await tierLookup.ExecuteReaderAsync(cancellationToken);
+            if (!await tierReader.ReadAsync(cancellationToken)) return new("CART_TIER_INVALID");
+            tierId = Identifier(tierReader, 0);
+            var tierMinimum = tierReader.GetInt32(1);
+            var tierMaximum = tierReader.GetInt32(2);
+            await tierReader.DisposeAsync();
+            if (command.Origin == BillingV2CartItemOrigins.Direct
+                && !BillingV2CartPolicy.IsDirectQuantityAllowed(command.Quantity, tierMinimum, tierMaximum))
+                return new("CART_DIRECT_QUANTITY_NOT_CONFIGURED");
         }
         if (command.Origin == BillingV2CartItemOrigins.Direct
             && !await HasCurrentInitialPriceAsync(connection, transaction,
@@ -1411,7 +1438,7 @@ public sealed class BillingV2CartService : IBillingV2CartService
         {
             return new("CART_PRESET_COMPONENT_INVALID");
         }
-        return new("CART_ITEM_OK", serviceId, tierId, scopeTemplate);
+        return new("CART_ITEM_OK", serviceId, tierId, scopeTemplate, requiresSubscriptionBase);
     }
 
     /// <summary>
@@ -2002,7 +2029,9 @@ public sealed class BillingV2CartService : IBillingV2CartService
                    service.self_service_orderable, service.public_ordering_mode,
                    service.configuration_policy,
                    preset_item.minimum_quantity, preset_item.maximum_quantity,
-                   item.configuration_kind, item.configuration_reference, item.display_order, item.created_at, item.updated_at
+                   item.configuration_kind, item.configuration_reference, item.display_order, item.created_at, item.updated_at,
+                   service.direct_minimum_quantity, service.direct_maximum_quantity,
+                   tier.direct_minimum_quantity, tier.direct_maximum_quantity
             FROM billing_v2_cart_items item JOIN billing_v2_services service ON service.id = item.service_id
             LEFT JOIN billing_v2_service_tiers tier ON tier.id = item.tier_id
             LEFT JOIN billing_v2_preset_items preset_item ON preset_item.id = item.source_preset_item_id
@@ -2028,7 +2057,8 @@ public sealed class BillingV2CartService : IBillingV2CartService
                 ? (reader.IsDBNull(11) ? null : reader.GetBoolean(11))
                 : directEditable;
             var bounds = sourcePresetItemId is null
-                ? (Minimum: 1, Maximum: 1)
+                ? (Minimum: reader.IsDBNull(27) ? reader.GetInt32(25) : Math.Max(reader.GetInt32(25), reader.GetInt32(27)),
+                    Maximum: reader.IsDBNull(28) ? reader.GetInt32(26) : Math.Min(reader.GetInt32(26), reader.GetInt32(28)))
                 : (Minimum: reader.IsDBNull(18) ? 1 : reader.GetInt32(18),
                     Maximum: reader.IsDBNull(19) ? 10000 : reader.GetInt32(19));
             result.Add(new(Identifier(reader, 0), Identifier(reader, 1), Identifier(reader, 2), reader.GetString(3),
@@ -2257,8 +2287,8 @@ public sealed class BillingV2CartService : IBillingV2CartService
         var connection = new MySqlConnection(_sql.ConnectionString); await connection.OpenAsync(token);
         await using var command = connection.CreateCommand(); command.CommandText = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('billing_v2_carts','billing_v2_cart_items','billing_v2_cart_quotes','billing_v2_services','billing_v2_service_tiers','billing_v2_service_prices','billing_v2_service_dependencies','billing_v2_commitment_terms','billing_v2_commitment_payment_options','billing_v2_offer_presets','billing_v2_preset_items');";
         if (Convert.ToInt32(await command.ExecuteScalarAsync(token)) != RequiredTables.Length) { await connection.DisposeAsync(); throw new InvalidOperationException("BILLING_V2_CART_SCHEMA_UNAVAILABLE"); }
-        command.CommandText = "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND ((table_name = 'billing_v2_preset_items' AND column_name IN ('selected_by_default','minimum_quantity','maximum_quantity')) OR (table_name = 'billing_v2_cart_items' AND column_name = 'origin'));";
-        if (Convert.ToInt32(await command.ExecuteScalarAsync(token)) != 4) { await connection.DisposeAsync(); throw new InvalidOperationException("BILLING_V2_CART_SCHEMA_UNAVAILABLE"); }
+        command.CommandText = "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND ((table_name = 'billing_v2_preset_items' AND column_name IN ('selected_by_default','minimum_quantity','maximum_quantity')) OR (table_name = 'billing_v2_cart_items' AND column_name = 'origin') OR (table_name = 'billing_v2_services' AND column_name IN ('direct_minimum_quantity','direct_maximum_quantity','requires_subscription_base')) OR (table_name = 'billing_v2_service_tiers' AND column_name IN ('direct_minimum_quantity','direct_maximum_quantity')));";
+        if (Convert.ToInt32(await command.ExecuteScalarAsync(token)) != 9) { await connection.DisposeAsync(); throw new InvalidOperationException("BILLING_V2_CART_SCHEMA_UNAVAILABLE"); }
         return connection;
     }
 
@@ -2275,7 +2305,7 @@ public sealed class BillingV2CartService : IBillingV2CartService
     private static string Identifier(object value) => value switch { Guid id => id.ToString("D"), byte[] bytes when bytes.Length == 16 => new Guid(bytes).ToString("D"), _ => Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty };
     private static string Identifier(MySqlDataReader reader, int ordinal) => Identifier(reader.GetValue(ordinal));
     private static string? NullableIdentifier(MySqlDataReader reader, int ordinal) => reader.IsDBNull(ordinal) ? null : Identifier(reader, ordinal);
-    private sealed record ResolvedItem(string Code, string? ServiceId = null, string? TierId = null, string? ScopeTemplate = null);
+    private sealed record ResolvedItem(string Code, string? ServiceId = null, string? TierId = null, string? ScopeTemplate = null, bool RequiresSubscriptionBase = true);
     private sealed record ServiceMetadata(string ConfigurationPolicy, bool PriceStableWithoutConfiguration, string DefaultScopeType);
     private sealed record DependencyDefinition(string ServiceId, string DefaultScope, string ScopeRelation, string TierRelation);
     private sealed record PresetDefinition(string Id, IReadOnlyList<BillingV2CartPresetCompositionItem> Items);

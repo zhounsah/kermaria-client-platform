@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 import type {
   BillingV2PublicCatalog,
   BillingV2PublicPriceComponent,
@@ -87,7 +88,7 @@ export function PublicVpsServicePage({
         <section className="service-hero vps-storefront-hero" aria-labelledby="vps-page-title">
           <div>
             <span className="card-kicker">Serveurs à distance</span>
-            <h1 id="vps-page-title">{content.title}</h1>
+            <AnimatedPublicH1 id="vps-page-title" text={content.title} />
             <p>{content.lead}</p>
           </div>
           <div className="button-row storefront-action-row">

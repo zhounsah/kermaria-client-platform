@@ -41,15 +41,15 @@ internal static class StorefrontContentSeed
         new Dictionary<string, Page>(StringComparer.Ordinal)
         {
             ["storefront:services"] = PageOf(
-                "Services informatiques pour particuliers et petites structures | Zachary IT",
-                "Messagerie, sauvegarde, accès à distance, réseau et assistance : partez de votre besoin pour trouver une réponse claire avec Zachary IT.",
-                "Des services pour la maison et le travail.",
-                "Un problème de messagerie, des données à protéger, un accès distant à organiser, un Wi-Fi instable ou un serveur à maintenir ? Partez de votre besoin : Zachary IT vous oriente vers la solution adaptée.",
+                "Services informatiques pour professionnels et petites structures | Zachary IT",
+                "Maintenance, réseau, sauvegarde, messagerie et accès à distance à Guichen : découvrez les prestations Zachary IT pour votre activité.",
+                "Des services informatiques pour votre activité",
+                "Un poste qui bloque, un Wi-Fi instable ou des fichiers difficiles à retrouver : identifions le problème avant de choisir une solution.",
                 "Demander un audit", "/diagnostic",
                 [
                     S("Une aide adaptée à votre situation", "Vous pouvez nous confier un besoin précis ou plusieurs sujets liés. Nous définissons ensemble ce qui est utile ; les travaux à étudier font l'objet d'un devis."),
                 ],
-                [F("Puis-je demander une seule prestation ?", "Oui. Nous précisons ce qui est nécessaire avant toute intervention."), F("Tout est-il commandable en ligne ?", "Non. Les demandes qui exigent une étude ou une installation font l'objet d'un devis."), F("À qui s'adressent ces services ?", "Aux particuliers, associations, indépendants et petites entreprises qui souhaitent une aide claire et suivie.")],
+                [F("Puis-je demander une seule prestation ?", "Oui. Nous précisons ce qui est nécessaire avant toute intervention."), F("Tout est-il commandable en ligne ?", "Non. Les demandes qui exigent une étude ou une installation font l'objet d'un devis."), F("À qui s'adressent ces services ?", "Aux professionnels, indépendants, associations et petites structures qui ont besoin d'un périmètre d'intervention clair.")],
                 [L("Cloud & Hébergement", "/services/cloud-hebergement"), L("Domaines & Messagerie", "/services/domaines-messagerie"), L("Réseau & Sécurité", "/services/reseau-securite"), L("Support & IT", "/services/support-it")],
                 problemEntries:
                 [

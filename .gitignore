@@ -35,6 +35,8 @@ TestResults/
 logs/
 *.log
 coverage/
+**/test-results/
+**/playwright-report/
 test-api-debug.log
 *.tmp
 

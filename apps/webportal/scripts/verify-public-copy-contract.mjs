@@ -164,4 +164,26 @@ assert.match(styles, /vps-identity-backdrop-exit 200ms/);
 assert.match(styles, /vps-identity-dialog-exit 200ms/);
 assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.vps-identity-dialog/);
 
+// Le contenu publié avant la refonte doit être lisible avec le nouvel éditorial,
+// sans écraser une phrase réellement personnalisée dans le constructeur.
+const { presentPublicSiteLayout } = await import(new URL("../lib/public-site-editorial.ts", import.meta.url));
+const legacyHome = {
+  area: "public", pageKey: "/", version: 3, updatedAt: null,
+  blocks: [
+    { id: "hero", type: "hero", title: "Une informatique fiable, simplement.", body: "Texte personnalisé conservé.", href: "/services", label: "Trouver une solution", items: [{ title: "Demander un conseil", body: null, href: "/contact", label: null }] },
+    { id: "services", type: "services", title: "De quoi avez-vous besoin ?", body: null, items: [
+      { title: "Un réseau qui fonctionne", body: "Retrouvez une connexion stable à la maison ou au travail, là où vous en avez besoin.", href: null, label: null },
+      { title: "Un service personnalisé", body: "Texte personnalisé conservé.", href: "/contact", label: null },
+    ] },
+  ],
+};
+const presented = presentPublicSiteLayout(legacyHome);
+assert.equal(presented.blocks[0].title, "Votre informatique suit votre activité.");
+assert.equal(presented.blocks[0].body, "Texte personnalisé conservé.");
+assert.equal(presented.blocks[0].href, "/contact");
+assert.equal(presented.blocks[0].items[0].href, "/services");
+assert.equal(presented.blocks[1].items[0].href, "/services/support-it");
+assert.deepEqual(presented.blocks[1].items[1], legacyHome.blocks[1].items[1]);
+assert.equal(legacyHome.blocks[0].title, "Une informatique fiable, simplement.");
+
 console.log("Contrat de copy publique, de confidentialité éditoriale et modale VPS vérifié.");

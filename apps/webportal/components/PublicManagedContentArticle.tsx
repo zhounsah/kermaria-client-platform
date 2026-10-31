@@ -1,6 +1,7 @@
 import type { CorrelationId, DataSource, ManagedContentDetail } from "@kermaria/shared";
 
 import { ManagedMarkdown } from "@/components/ManagedMarkdown";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 import { MockNotice } from "@/components/MockNotice";
 import { formatDateTime } from "@/lib/formatters";
 
@@ -22,7 +23,7 @@ export function PublicManagedContentArticle({
       <article className="legal-page managed-content-page">
         <header className="legal-page-header">
           <p className="eyebrow">{eyebrow}</p>
-          <h1>{content.title}</h1>
+          <AnimatedPublicH1 text={content.title} />
           <div className="managed-content-meta">
             {content.versionLabel ? (
               <p className="managed-content-version">{content.versionLabel}</p>

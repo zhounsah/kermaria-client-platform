@@ -1,6 +1,6 @@
 # Conditions Générales de Vente - Zachary IT
 
-**Version du : 14 octobre 2026**
+**Version du : 31 octobre 2026**
 
 Les présentes Conditions Générales de Vente, ci-après les « CGV », s’appliquent aux prestations proposées par :
 
@@ -122,6 +122,18 @@ Le Client s’engage à utiliser uniquement des logiciels pour lesquels il dispo
 Le Prestataire peut réaliser des prestations de maintenance, diagnostic, dépannage, configuration, assistance ou conseil.
 
 Ces prestations peuvent être réalisées à distance ou sur site, selon ce qui est prévu dans le devis ou convenu par écrit.
+
+### 5.5.1 Abonnements Assistance & maintenance
+
+Les six formules Assistance & maintenance sont des abonnements mensuels. La formule, la quantité de postes professionnels, la durée d'engagement, le rythme de paiement et le prix TTC total sont présentés dans le panier avant confirmation. Les engagements disponibles sont mensuel sans engagement (FLEX), 6 mois et 12 mois ; aucune remise d'engagement ne s'applique à ces formules. Les modalités de résiliation et de rétractation des présentes CGV restent applicables.
+
+Essentiel particuliers couvre un ordinateur du foyer et 15 minutes mensuelles d'assistance à distance, avec un diagnostic initial et des conseils de sécurité. Sérénité couvre jusqu'à deux ordinateurs et 45 minutes mensuelles, avec une vérification de sécurité trimestrielle planifiée et un contrôle des mises à jour et de l'existence des sauvegardes accessibles. Premium couvre jusqu'à quatre ordinateurs et 90 minutes mensuelles, avec un point préventif mensuel à distance et une visite préventive à domicile de 60 minutes par période de douze mois d'abonnement actif. Cette visite est organisée sur rendez-vous en Ille-et-Vilaine, déplacement inclus, et peut être planifiée dès la mise en service. Les travaux dépassant les 60 minutes ou le périmètre préventif exigent un accord distinct.
+
+Pro Start, Pro Business et Pro Premium couvrent de un à dix postes déclarés, au tarif mensuel par poste affiché pour le palier choisi. Ils comprennent respectivement 15, 45 et 90 minutes d'assistance à distance par poste et par mois. Le crédit mensuel total est mutualisé entre les postes couverts. Une modification du nombre de postes en cours de période demande un accord commercial distinct ; elle n'est pas automatique dans l'espace client. Pro Start comprend un inventaire initial, des contrôles préventifs mensuels planifiés des postes accessibles et le signalement des anomalies constatées. Pro Business ajoute un contrôle mensuel des protections et sauvegardes existantes accessibles et un rapport synthétique mensuel. Pro Premium ajoute une revue technique trimestrielle des incidents et de la continuité des outils couverts. La souscription ne met pas en place une surveillance continue ni une garantie de détection de tout incident.
+
+Les demandes sont reçues via le portail client ou l'adresse de contact et prises en charge du lundi au vendredi, de 9 h à 18 h, heure de Paris, hors jours fériés français. Hors plage, elles sont examinées à la prochaine plage ouvrée. À gravité et ancienneté comparables, les demandes Business précèdent celles de Start, et celles de Pro Premium précèdent Business et Start ; Premium particuliers bénéficie d'un traitement prioritaire dans cette même plage. Aucune disponibilité 24 h/24 ni aucun délai garanti de réponse ou de résolution n'est inclus.
+
+Les minutes non consommées ne se reportent pas. Un premier contact de mise en service est proposé sous cinq jours ouvrés après paiement confirmé et réception des coordonnées nécessaires. Le client fournit les accès requis et les postes couverts sont consignés par écrit. Les licences, matériels, stockage de sauvegarde, projets et prestations hors forfait sont exclus sauf mention expresse. Les remises Essentiel (10 %) et Sérénité (15 %) portent uniquement sur la main-d'œuvre d'interventions hors forfait commandées séparément, hors déplacement, matériel, licences et prestations de tiers ; elles ne se cumulent pas avec une autre remise sur la même main-d'œuvre. Tout dépassement ou prestation complémentaire est soumis à accord préalable.
 
 ### 5.6 Site web et services associés
 
@@ -508,7 +520,7 @@ Le Prestataire n’est pas responsable des garanties commerciales ou techniques 
 
 Les interventions sur site sont réalisées uniquement si elles sont prévues dans le devis ou acceptées par écrit.
 
-Des frais de déplacement peuvent être facturés.
+Des frais de déplacement peuvent être facturés, sauf pour la visite préventive annuelle de 60 minutes incluse dans la formule Premium particuliers en Ille-et-Vilaine.
 
 Le Client doit garantir au Prestataire un accès raisonnable, sécurisé et légal aux locaux, équipements et installations nécessaires.
 

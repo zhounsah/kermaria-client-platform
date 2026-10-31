@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 import type { ReactNode } from "react";
 import type { SitePageLayout } from "@kermaria/shared";
 import { ManagedMarkdown } from "@/components/ManagedMarkdown";
@@ -75,8 +76,7 @@ export function PublicStorefrontPage({
         <ServiceBreadcrumb items={breadcrumbItems} />
         <section className={`service-hero${compactHero ? " service-hero-compact storefront-compact-hero" : ""}`}>
           <div>
-            <span className="card-kicker">Zachary IT</span>
-            <h1>{heroTitle ?? content.title}</h1>
+            <AnimatedPublicH1 text={heroTitle ?? content.title} />
             <p>{heroLead ?? content.lead}</p>
           </div>
           {showHeroActions ? (

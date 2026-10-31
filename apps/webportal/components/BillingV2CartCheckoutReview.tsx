@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, CircleAlert, LoaderCircle } from "lucide-react";
 
@@ -222,15 +223,15 @@ export function BillingV2CartCheckoutReview({ initialLayout }: { initialLayout: 
   }, [resendingVerification]);
 
   if (state === "loading" || state === "claiming") return <main className="content-section"><p>{state === "claiming" ? "Nous récupérons votre panier…" : "Préparation de votre souscription…"}</p></main>;
-  if (state === "empty") return <main className="content-section"><h1>Votre panier est vide</h1><p>Ajoutez un service ou une offre avant de poursuivre.</p><Link className="button" href="/panier">Voir mon panier</Link></main>;
+  if (state === "empty") return <main className="content-section"><AnimatedPublicH1 text="Votre panier est vide" /><p>Ajoutez un service ou une offre avant de poursuivre.</p><Link className="button" href="/panier">Voir mon panier</Link></main>;
   if (state === "complete" && checkoutStatus) {
     return <CheckoutRecoveryStatus status={checkoutStatus} />;
   }
-  if (!cart || !quote) return <main className="content-section"><h1>Votre souscription</h1><p>{message ?? "La vérification du panier est indisponible."}</p><Link className="button" href="/panier">Retour au panier</Link></main>;
+  if (!cart || !quote) return <main className="content-section"><AnimatedPublicH1 text="Votre souscription" /><p>{message ?? "La vérification du panier est indisponible."}</p><Link className="button" href="/panier">Retour au panier</Link></main>;
 
   const intro = <header className="cart-storefront-heading subscription-review-heading">
       <p className="eyebrow">Dernière vérification</p>
-      <h1 id="subscription-review-title">Vérifier votre abonnement</h1>
+      <AnimatedPublicH1 id="subscription-review-title" text="Vérifier votre abonnement" />
       <p>Vérifiez votre abonnement avant de poursuivre vers le paiement.</p>
     </header>;
   const details = <div className="cart-storefront-items subscription-review-details">
@@ -397,7 +398,7 @@ function CheckoutRecoveryStatus({ status }: { status: BillingV2CartCheckoutStatu
     <div className={`subscription-status-card subscription-status-${content.tone}`}>
       <span className="subscription-status-icon">{icon}</span>
       <p className="eyebrow">Souscription</p>
-      <h1>{content.title}</h1>
+      <AnimatedPublicH1 text={content.title} />
       <p>{content.description}</p>
       {content.action ? <div className="subscription-status-actions">{content.action}</div> : null}
       {content.tone === "pending" ? <span className="sr-only">Actualisation en cours.</span> : null}

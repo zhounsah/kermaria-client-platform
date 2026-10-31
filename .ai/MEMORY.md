@@ -12,6 +12,15 @@
 
 ## État courant / informations récentes
 
+### Zachary IT v2.2 en production — 31/10/2026
+
+- `codex/release-v2.2.0` consolide la refonte publique et Assistance Billing V2. Le propriétaire a autorisé les migrations 103–107, le libre-service des six abonnements et le Checkout de tout le catalogue éligible, stockage compris sur la preuve KoXo DEV. PROD utilise le Web v2.2 corrigé `98a1d6c`, l'API v2.2 et les cinq migrations ; les CGV approuvées sont publiées et les deux drapeaux Checkout sont ouverts. Santé HTTP 200, panier/quantités et pages principales vérifiés sans règlement réel. La mesure Lighthouse PROD corrigée donne performance 72/72, accessibilité 100/100, SEO 100/100, LCP environ 6 s et CLS 0/0. Le premier paiement réel, son webhook, BPCE et le quota stockage client PROD doivent être surveillés ; la résiliation Billing V2 reste manuelle. Voir [zachary-v2-2-release-2026-10-31.md](topics/zachary-v2-2-release-2026-10-31.md) et `docs/releases/V2.2.0.md`. Les lignes historiques ci-dessous décrivant des changements « non commités » ou un Web DEV antérieur ne reflètent plus cet état de release.
+
+### Frontend public PR #1
+
+- La recette du 2026-10-30 sur `codex/zachary-it-refonte-ready` a réduit les animations continues, rendu l'introduction non bloquante, puis donné au rail, à la méthode et aux lignes de services des mouvements courts. Le hub Assistance explique désormais l'intérêt d'un abonnement face à une intervention ponctuelle avec des bénéfices tirés des six formules. Dix scénarios Playwright desktop/mobile et les contrôles web/SEO passent ; la release Web DEV active est `webportal-dev-assistance-value-pr1-20261030`. Les changements restent non commités. Voir [frontend-premium-pr1.md](topics/frontend-premium-pr1.md) et `docs/FRONTEND_PREMIUM_PR1_2026-10-30.md`.
+- Audit local du 31/10/2026 sur ce même worktree : écran d'introduction retiré pour afficher immédiatement le hero et son CTA, fallback d'accueil enrichi, erreurs du rappel diagnostic rendues accessibles. `npm run validate` et la recette Chromium locale passent ; aucune livraison DEV/PROD de ces nouvelles corrections. Voir [zachary-site-audit-2026-10-31.md](topics/zachary-site-audit-2026-10-31.md) et `docs/AUDIT_ZACHARY_IT_2026-10-31.md`.
+
 ### Correctif de présentation Tarifs
 
 - `v2.1.1-hotfix.5` remplace `(montant HT, estimation France)` par
@@ -38,17 +47,25 @@
 
 ### Version
 
-- **Production : v2.1.0** déployée le 2026-10-07 depuis le tag immuable
-  `v2.1.0` / commit `09737e2`. L'API SRV-13 garde ce paquet. Le WebPortal SRV-12
-  porte en plus le correctif de libellés `v2.1.0-hotfix.1` / `0f7d652`, sans
+- **Historique avant transition TVA : v2.1.0** déployée le 2026-10-07 depuis le tag immuable
+  `v2.1.0` / commit `09737e2`. L'API SRV-13 gardait ce paquet. Le WebPortal SRV-12
+  portait en plus le correctif de libellés `v2.1.0-hotfix.1` / `0f7d652`, sans
   changer la version affichée ; les anciens runtimes sont conservés.
   Migrations 098–101 appliquées à `kermaria` après sauvegarde vérifiée.
   L'approbation automatique des inscriptions reste désactivée par défaut.
   La revue métier et juridique par le propriétaire reste à terminer.
   Preuves : `docs/releases/V2.1.0.md`,
   `docs/releases/V2.1.0_HOTFIX_1.md` et `docs/CURRENT_STATE.md`.
+- **État live vérifié le 2026-10-14** : HEAD Git `5ce2898`, Web PROD sur
+  `/opt/kermaria/releases/v2.1.1-5ce2898-prod`, API PROD DLL SHA-256
+  `2A9028ECC8CA15BFD91CED5742F3B0AAC0407822C561A551CBF663935519EE61`.
+  La configuration API PROD a été enrichie du Tax Rate Stripe Live FR 20 %
+  inclusif et du numéro TVA vendeur ; confirmation EI `false`, nouveaux
+  Checkout toujours fermés. Sauvegardes, hashes et santé :
+  `docs/releases/V2.1.1_VAT_RUNTIME_CONFIG_2026-10-14.md`.
 - **v2.0.0.0 (2026-08-25)** : bascule Billing V2-only, migrations 070/071. Voir [billing-v2-only-cancellation.md](topics/billing-v2-only-cancellation.md).
 - Historique : v1.4.0.1 (2026-08-20) a migré le diagnostic public vers Billing V2 ([billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md)) ; v1.4.0.0 a livré le socle Billing V2.
+- **Livraison DEV des 2026-10-29/30** : un service Assistance & maintenance à six paliers Billing V2, migrations 103/104/105 sur `kermaria_dev`, mode devis. Le Web DEV actif `webportal-dev-assistance-tiers-ordered-pr1-20261030` reprend la PR #1 depuis `codex/zachary-it-refonte-ready`, conserve le choix de formule jusqu'au devis, anime les sections éditoriales et explique sur le hub l'intérêt d'un abonnement face à une prestation ponctuelle sans inventer de garanties. API et migration restent dans le worktree `codex/frontend-premium-20261030`. Aucun achat réel ni commit. Voir [assistance-maintenance-billing-v2.md](topics/assistance-maintenance-billing-v2.md) et `docs/releases/ASSISTANCE_MAINTENANCE_DEV_2026-10-29.md`.
 
 ### Billing V2 — fiches récupérées des anciennes conversations (2026-09-17)
 
@@ -99,6 +116,16 @@
 
 ### Vitrine, SEO et éditorial
 
+- **Refonte professionnelle Zachary IT (DEV 2026-10-28, pas PROD)** : la branche
+  `codex/zachary-it-refonte-ready` conserve les hotfixes d'`origin/main`.
+  Après refus du premier rendu trop neutre, la direction visuelle actuelle
+  s'inspire du rythme animé d'enzonaute.me : héros partagé, ligne de titre
+  cyclique issue d'un film fourni, sections expressives, View Timelines et
+  mouvement réduit. WebPortal DEV, contenus CMS via BFF, audit argumenté, charte, captures et
+  recette responsive/accessibilité/performance :
+  [site-refonte-professionnelle-2026-10-28.md](topics/site-refonte-professionnelle-2026-10-28.md)
+  et `docs/rapport-refonte-site.md`. L'API DEV n'a pas été redémarrée à cause
+  des intégrations externes actives ; la PROD n'a pas été modifiée.
 - **Refonte UX et CMS (DEV 2026-10-05, PROD 2026-10-07)** : accueil,
   parcours publics et footer réorganisés via un constructeur versionné,
   demandes de données personnelles par utilisateur, médiathèque, et option
@@ -234,7 +261,8 @@
 
 ### Diagnostic public Billing V2 (2026-08-20)
 
-- /diagnostic produit désormais une BillingV2PublicSelection ou `requires_quote`, demande le devis via /api/formules/devis, puis sort vers /formules/{preset} avec la sélection complète. Aucun SQL/pricing/provisioning ajouté. Référence : [billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md).
+- /diagnostic produit désormais une BillingV2PublicSelection ou
+`requires_quote`, demande le devis via /api/formules/devis, puis sort vers /formules/{preset} avec la sélection complète. Aucun SQL/pricing/provisioning ajouté. Référence : [billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md).
 
 ### Billing V2 (v1.4.0.0)
 

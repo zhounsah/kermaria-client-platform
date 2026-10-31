@@ -66,6 +66,7 @@ export function buildPublicCommercialCatalog(
 
 const CATEGORY_PRESENTATION: Readonly<Record<string, string>> = {
   "Accès": "Postes et accès à distance",
+  "Assistance": "Assistance et maintenance",
   "Cloud": "Hébergement et services en ligne",
   "Domaines": "Messagerie et domaines",
   "Identité": "Réseau et sécurité",
@@ -263,7 +264,7 @@ function projectService(
       ? money(service.flatMonthlyAmountCents, catalog.currency,
           service.flatMonthlyFrenchNetAmountCents)
       : null,
-    ...tierProjections.map((tier) => tier.recurringPrice),
+    ...tierProjections.filter((tier) => service.code !== "ASSISTANCE-MAINTENANCE" || tier.selectable).map((tier) => tier.recurringPrice),
   ].filter((amount): amount is PublicCommercialMoney => amount !== null);
   const startingPrice = recurringPrices.sort((a, b) => a.amountCents - b.amountCents)[0] ?? null;
   const publicUrl = storefrontServiceUrlForBillingCode(service.code);
@@ -296,6 +297,8 @@ function projectService(
 
   return {
     id: service.code,
+    directMinimumQuantity: service.directMinimumQuantity,
+    directMaximumQuantity: service.directMaximumQuantity,
     slug: publicUrl ? publicUrl.slice("/services/".length) : slugFromCode(service.code),
     name,
     tierSelectorLabel: service.tierSelectorLabel,
@@ -340,6 +343,8 @@ function projectTier(
     : null;
   return {
     id: tier.code,
+    directMinimumQuantity: tier.directMinimumQuantity,
+    directMaximumQuantity: tier.directMaximumQuantity,
     label: resolveServicePublicDetail(serviceCode, tier.label) ?? tier.label,
     description: tier.description,
     selectable: tier.publicSelectable,

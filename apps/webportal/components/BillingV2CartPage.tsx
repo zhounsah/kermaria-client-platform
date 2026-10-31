@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { AnimatedPublicH1 } from "@/components/AnimatedPublicH1";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type {
@@ -188,7 +189,7 @@ export function BillingV2CartPage({ catalog, initialLayout }: Props) {
   ), [catalog.services]);
 
   function renderCartState(title: string, content: ReactNode, loading = false) {
-    const intro = <h1 id="cart-title">{title}</h1>;
+    const intro = <AnimatedPublicH1 id="cart-title" text={title} />;
     const items = <div className="cart-storefront-state-content">{content}</div>;
     return <section className={`cart-storefront ${loading ? "cart-storefront-loading" : "cart-storefront-empty"}`}
       aria-labelledby="cart-title" aria-live={loading ? "polite" : undefined}>
@@ -238,7 +239,7 @@ export function BillingV2CartPage({ catalog, initialLayout }: Props) {
   const intro = <>
       <header className="cart-storefront-heading">
         <p className="eyebrow">Votre sélection</p>
-        <h1 id="cart-title">Votre panier</h1>
+        <AnimatedPublicH1 id="cart-title" text="Votre panier" />
         <p>Vérifiez vos services et vos options. La souscription sera disponible à l’étape suivante.</p>
       </header>
 

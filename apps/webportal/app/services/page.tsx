@@ -44,8 +44,8 @@ export async function generateMetadata(): Promise<Metadata> {
     : null;
   const page = parsedPage ? presentPublicServicesLandingContent(parsedPage) : null;
   return buildPublicMetadata({
-    title: page?.seoTitle ?? "Services informatiques pour particuliers et petites structures",
-    description: page?.seoDescription ?? "Sauvegarde, messagerie, réseau, site web et assistance pour avancer selon votre besoin avec Zachary IT.",
+    title: page?.seoTitle ?? "Services informatiques pour professionnels et petites structures",
+    description: page?.seoDescription ?? "Maintenance, réseau, sauvegarde et accès à distance pour votre activité avec Zachary IT à Guichen.",
     path: "/services",
     // Sans contenu, le corps rend un `ErrorState` : ne pas laisser cet
     // instantane entrer dans l'index a la place de la page.
