@@ -53,6 +53,7 @@ html:has(.public-motion-paused) { scroll-behavior: auto !important; }
 /* Hero: headline, illustrative system and a useful service index. */
 .vitrine-hero-band { min-width: 0; background: var(--site-cream); overflow: clip; }
 .home-loading-screen { display: grid; width: min(1500px, calc(100% - 2 * var(--site-gutter))); min-height: min(650px, 90svh); align-content: center; justify-items: start; gap: 22px; margin-inline: auto; padding-block: 64px; }
+.public-main:has(.vitrine-hero-band) .home-loading-screen { display: none; }
 .home-loading-kicker { margin: 0; color: var(--site-body); font-size: 12px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
 .home-loading-title { max-width: 13ch; margin: 0; color: var(--site-ink); font-size: clamp(52px, 5.65vw, 94px); font-weight: 830; line-height: .99; letter-spacing: -.075em; text-wrap: balance; }
 .home-loading-lead { max-width: 55ch; margin: 0; color: var(--site-body); font-size: clamp(17px, 1.5vw, 21px); line-height: 1.55; }
