@@ -1,0 +1,11 @@
+---
+name: zachary-v2-2-release-2026-10-31
+---
+
+# Zachary IT v2.2 — état de livraison au 31/10/2026
+
+La branche `codex/release-v2.2.0` réunit la refonte publique et les six paliers Assistance Billing V2. Les paliers particuliers sont limités à une unité pour le foyer ; les professionnels autorisent 1 à 10 postes. Le propriétaire a choisi le libre-service et demandé l'ouverture du Checkout pour tout le catalogue éligible, avec engagements FLEX, 6 et 12 mois. Les modalités Assistance approuvées figurent dans `docs/ASSISTANCE_CONDITIONS_V2.2_PROJET.md` et dans le seed des CGV. Une mise à jour du seed ne republie pas les CGV déjà stockées en base.
+
+La candidate a été déployée sur DEV : migrations 106–107 appliquées sur `kermaria_dev`, API et Web DEV sains, six liens/prix vérifiés au navigateur à 390/1440 px, quote Pro Business × 2 à 93,60 € TTC mensuels, Pro × 11 et particulier × 2 rejetés. Les CGV v2.2 ont été publiées sur DEV via le BFF après sauvegarde et relecture de la page publique. Le propriétaire a demandé de limiter la recette DEV à des étapes sans pièce fiscale parce que BPCE y est configuré en live ; la readiness DEV refuse également le Checkout taxable avec `BILLING_V2_BPCE_SELLER_IDENTITY_UNVERIFIED`. Aucun paiement Stripe complet ni émission BPCE n'a été testé.
+
+PROD est restée sur Web `v2.1.1-hotfix.5-dfc31c5-prod` avec Checkout API/BFF fermé lors du dernier relevé. Les migrations 103–107 sont absentes de `kermaria` ; aucun service Assistance n'y est présent. Le Checkout global rendrait aussi achetables les huit services directs et quatre presets déjà publiés. Le tableau de readiness PROD signale `BILLING_V2_KOXO_STORAGE_PROVIDER_NOT_READY` comme blocage opérationnel des quotas de stockage. `npm run backup:mariadb` échoue sur une vue invalide ou les droits `SHOW VIEW` ; un dump de tous les objets accessibles hors cette vue est conservé, sans restauration éprouvée. Avant ouverture, reprendre les portes de validation, les preuves et le plan de retour arrière de `docs/releases/V2.2.0.md`, notamment sauvegarde PROD complète, CGV CMS versionnées et preuve de livraison du catalogue éligible.

@@ -1,6 +1,6 @@
 # Assistance & maintenance — projet de conditions particulières v2.2
 
-**Projet commercial à relire avant publication et avant tout Checkout réel.** Il précise les six paliers déjà tarifés sans créer de garantie de disponibilité. Les CGV publiées et leur version acceptée au panier doivent reprendre ou incorporer ce texte ; le seed Git seul ne modifie pas le contenu juridique déjà publié en base.
+**Modalités validées par le propriétaire le 31/10/2026 ; publication CMS et vérification opérationnelle encore à effectuer.** Ce document précise les six paliers déjà tarifés sans créer de garantie de disponibilité. Les CGV publiées et leur version acceptée au panier doivent reprendre ou incorporer ce texte ; le seed Git seul ne modifie pas le contenu juridique déjà publié en base.
 
 ## Périmètre commun
 

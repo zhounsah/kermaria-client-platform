@@ -12,6 +12,10 @@
 
 ## État courant / informations récentes
 
+### Candidate Zachary IT v2.2 — 31/10/2026
+
+- `codex/release-v2.2.0` consolide les commits de la refonte publique et Assistance Billing V2. Candidate déployée et vérifiée sur DEV ; PROD encore sur `v2.1.1-hotfix.5` avec Checkout fermé au dernier relevé. Les modalités Assistance ont été validées par le propriétaire, mais leur publication dans les CGV CMS et la recette de règlement sans pièce fiscale réelle restent à faire. Voir [zachary-v2-2-release-2026-10-31.md](topics/zachary-v2-2-release-2026-10-31.md) et `docs/releases/V2.2.0.md`. Les lignes historiques ci-dessous décrivant des changements « non commités » ou un Web DEV antérieur ne reflètent plus cet état de release.
+
 ### Frontend public PR #1
 
 - La recette du 2026-10-30 sur `codex/zachary-it-refonte-ready` a réduit les animations continues, rendu l'introduction non bloquante, puis donné au rail, à la méthode et aux lignes de services des mouvements courts. Le hub Assistance explique désormais l'intérêt d'un abonnement face à une intervention ponctuelle avec des bénéfices tirés des six formules. Dix scénarios Playwright desktop/mobile et les contrôles web/SEO passent ; la release Web DEV active est `webportal-dev-assistance-value-pr1-20261030`. Les changements restent non commités. Voir [frontend-premium-pr1.md](topics/frontend-premium-pr1.md) et `docs/FRONTEND_PREMIUM_PR1_2026-10-30.md`.
