@@ -448,7 +448,7 @@ public static class BillingV2AdminOperationalLimitations
         new(
             "BILLING_V2_KOXO_STORAGE_PROVIDER_NOT_READY",
             "human_review",
-            "Les quotas de stockage V2 peuvent etre calcules, mais aucun provider fiable de modification reelle de quota KoXo n'est cable.")
+            "Le provider KoXo peut etre configure, mais sa capacite a appliquer les quotas sur les cibles reelles doit etre verifiee avant de vendre un service de stockage en libre-service.")
     ];
 
     public static IReadOnlyList<BillingV2AdminOperationalLimitation> Create(
