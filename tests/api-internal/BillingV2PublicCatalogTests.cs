@@ -58,11 +58,12 @@ public static class BillingV2PublicCatalogTests
         var catalog = BillingV2PublicCatalogSeed.Snapshot();
         var service = catalog.Services.Single(item => item.Code == "ASSISTANCE-MAINTENANCE");
         Ensure(service.FlatMonthlyAmountCents is null
-            && !service.DiscountEligible && !service.CartDirectEligible
+            && !service.DiscountEligible && service.CartDirectEligible
+            && service.PublicOrderingMode == BillingV2PublicOrderingModes.Direct
             && service.DirectMinimumQuantity == 1
-            && service.DirectMaximumQuantity == 1
+            && service.DirectMaximumQuantity == 10
             && service.Tiers.Count == 6,
-            "L'assistance est un seul service a six paliers, ferme a la commande directe.");
+            "L'assistance est un seul service a six paliers ouvert a la commande directe.");
         foreach (var (code, gross, net) in new[]
         {
             ("ASSIST-PERS-ESSENTIEL", 990L, 825L),
@@ -76,8 +77,10 @@ public static class BillingV2PublicCatalogTests
             var tier = service.Tiers.Single(item => item.Code == code);
             Ensure(tier.MonthlyAmountCents == gross
                 && tier.MonthlyFrenchNetAmountCents == net
-                && tier.PublicSelectable,
-                "Chaque palier d'assistance affiche son prix sans activer le panier.");
+                && tier.PublicSelectable
+                && tier.DirectMinimumQuantity == 1
+                && tier.DirectMaximumQuantity == (code.StartsWith("ASSIST-PRO-", StringComparison.Ordinal) ? 10 : 1),
+                "Chaque palier d'assistance conserve son prix et ses bornes directes.");
         }
     }
 

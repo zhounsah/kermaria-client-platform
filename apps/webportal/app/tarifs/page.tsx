@@ -6,6 +6,7 @@ import { PublicCommercialTariffCatalog } from "@/components/PublicCommercialTari
 import { PublicStorefrontPage } from "@/components/PublicStorefrontPage";
 import { getBillingV2FormulesCatalog, getPublicManagedContent, getPublicSitePageLayout } from "@/lib/internal-api";
 import { buildPublicCommercialCatalog } from "@/lib/public-commercial-catalog";
+import { findAssistanceOffer } from "@/lib/assistance-offers";
 import {
   buildPublicMetadata,
   CONTENT_UNAVAILABLE_ROBOTS,
@@ -32,7 +33,11 @@ export async function generateMetadata(): Promise<Metadata> {
   });
 }
 
-export default async function TarifsPage() {
+export default async function TarifsPage({ searchParams }: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const assistanceTierCode = findAssistanceOffer(params.assistance)?.code;
   const [contentResult, billingCatalogResult, layoutResult] = await Promise.all([
     getPublicManagedContent("storefront:tarifs"),
     getBillingV2FormulesCatalog(),
@@ -59,6 +64,7 @@ export default async function TarifsPage() {
         breadcrumbItems={resolveStorefrontBreadcrumb("/tarifs")!}
         beforeSections={(
           <><section className="service-section"><h2>Assistance &amp; maintenance</h2><p>Découvrez les abonnements pour particuliers et professionnels.</p><Link className="button button-secondary" href="/assistance-maintenance">Voir les abonnements</Link></section><PublicCommercialTariffCatalog
+            assistanceTierCode={assistanceTierCode}
             catalog={buildPublicCommercialCatalog(billingCatalogResult.data)}
             currency={billingCatalogResult.data.currency}
           /></>

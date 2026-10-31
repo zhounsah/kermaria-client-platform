@@ -25,42 +25,42 @@ export const ASSISTANCE_OFFERS: readonly AssistanceOffer[] = [
     audience: "particuliers", anchor: "essentiel", summary: "Un interlocuteur pour vos questions courantes.",
     coverage: "1 ordinateur", minutes: 15, cadence: "Diagnostic initial",
     highlights: ["Diagnostic initial à distance", "Conseils et recommandations de sécurité"],
-    details: ["10 % de remise sur les interventions hors forfait"],
+    details: ["10 % de remise sur la main-d’œuvre des interventions hors forfait, hors déplacement et fournitures"],
   },
   {
     code: "ASSIST-PERS-SERENITE", name: "Sérénité", seedName: "Assistance particuliers Sérénité",
     audience: "particuliers", anchor: "serenite", summary: "Un suivi pour les ordinateurs du foyer.",
     coverage: "Jusqu’à 2 ordinateurs", minutes: 45, cadence: "Contrôle trimestriel",
     highlights: ["Vérification trimestrielle de sécurité", "Contrôle des mises à jour et des sauvegardes"],
-    details: ["15 % de remise sur les interventions hors forfait"],
+    details: ["15 % de remise sur la main-d’œuvre des interventions hors forfait, hors déplacement et fournitures"],
   },
   {
     code: "ASSIST-PERS-PREMIUM", name: "Premium", seedName: "Assistance particuliers Premium",
     audience: "particuliers", anchor: "premium", summary: "Un accompagnement régulier pour tout le foyer.",
     coverage: "Jusqu’à 4 ordinateurs", minutes: 90, cadence: "Suivi mensuel",
     highlights: ["Suivi préventif mensuel", "Vérification des sauvegardes et de l’antivirus"],
-    details: ["Une visite préventive annuelle à domicile de 60 minutes", "Traitement prioritaire dans les horaires de support convenus"],
+    details: ["Une visite préventive de 60 minutes par période de 12 mois en Ille-et-Vilaine, déplacement inclus", "Demandes examinées en priorité pendant les horaires de support, sans délai garanti"],
   },
   {
     code: "ASSIST-PRO-START", name: "Pro Start", seedName: "Assistance professionnels Start",
     audience: "professionnels", anchor: "pro-start", summary: "Le suivi des postes, avec une aide ponctuelle.",
     coverage: "Par poste", minutes: 15, cadence: "Suivi préventif",
-    highlights: ["Inventaire et supervision de l’état des postes", "Alertes de sécurité et maintenance préventive"],
-    details: [],
+    highlights: ["Inventaire initial et contrôle préventif mensuel des postes", "Signalement des anomalies constatées, sans surveillance continue"],
+    details: ["Minutes mutualisées entre les postes couverts"],
   },
   {
     code: "ASSIST-PRO-BUSINESS", name: "Pro Business", seedName: "Assistance professionnels Business",
     audience: "professionnels", anchor: "pro-business", summary: "Plus d’assistance et un bilan chaque mois.",
     coverage: "Par poste", minutes: 45, cadence: "Rapport mensuel",
-    highlights: ["Inventaire, supervision et maintenance renforcée", "Contrôles de la protection et des sauvegardes existantes", "Rapport mensuel synthétique"],
-    details: ["Prise en charge prioritaire dans les horaires convenus"],
+    highlights: ["Inventaire et contrôles préventifs mensuels", "Contrôle des protections et sauvegardes existantes accessibles", "Rapport mensuel synthétique"],
+    details: ["Demandes examinées avant Pro Start à gravité comparable, pendant les horaires de support"],
   },
   {
     code: "ASSIST-PRO-PREMIUM", name: "Pro Premium", seedName: "Assistance professionnels Premium",
     audience: "professionnels", anchor: "pro-premium", summary: "Un suivi renforcé et une revue trimestrielle.",
     coverage: "Par poste", minutes: 90, cadence: "Revue trimestrielle",
-    highlights: ["Les prestations Pro Business", "Suivi renforcé de la sécurité et des incidents", "Revue technique trimestrielle"],
-    details: ["Accompagnement infrastructure et continuité d’activité", "Priorité renforcée selon contrat"],
+    highlights: ["Les prestations Pro Business", "Revue technique trimestrielle des incidents et de la continuité", "90 minutes d’assistance par poste et par mois"],
+    details: ["Nouveaux projets d’infrastructure sur devis", "Demandes examinées avant Business et Start à gravité comparable, sans délai garanti"],
   },
 ];
 
@@ -111,6 +111,10 @@ export function assistanceOfferHref(offer: AssistanceOffer): string {
 
 export function assistanceContactHref(offer: AssistanceOffer): string {
   return `/contact?assistance=${encodeURIComponent(offer.code)}`;
+}
+
+export function assistanceCartHref(offer: AssistanceOffer): string {
+  return `/tarifs?assistance=${encodeURIComponent(offer.code)}#ajouter-assistance-maintenance`;
 }
 
 export function assistanceDisplayPrice(offer: AssistanceOffer, tier: PublicCommercialTier) {

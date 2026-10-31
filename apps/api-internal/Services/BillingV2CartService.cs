@@ -1113,6 +1113,14 @@ public sealed class BillingV2CartService : IBillingV2CartService
             var tier = item.TierCode is null
                 ? null
                 : service.Tiers.FirstOrDefault(candidate => candidate.Code == item.TierCode);
+            if (item.Origin == BillingV2CartItemOrigins.Direct
+                && (!service.CartDirectEligible
+                    || !BillingV2CartPolicy.IsDirectQuantityAllowed(
+                        item.Quantity, item.MinimumQuantity, item.MaximumQuantity)))
+            {
+                issues.Add(Issue("CART_DIRECT_NOT_ELIGIBLE", item, true));
+                continue;
+            }
             var components = tier is null && item.TierCode is null
                 ? service.FlatComponents
                 : tier?.Components;
@@ -1380,10 +1388,25 @@ public sealed class BillingV2CartService : IBillingV2CartService
         if (tiered != !string.IsNullOrWhiteSpace(command.TierCode)) return new("CART_TIER_REQUIRED_OR_FORBIDDEN");
         if (command.TierCode is not null)
         {
-            tierId = await LookupIdAsync(connection, transaction,
-                "SELECT id FROM billing_v2_service_tiers WHERE service_id = @service_id AND code = @code AND status = 'active' AND public_selectable = 1;",
-                command.TierCode.Trim(), cancellationToken, serviceId);
-            if (tierId is null) return new("CART_TIER_INVALID");
+            await using var tierLookup = connection.CreateCommand();
+            tierLookup.Transaction = transaction;
+            tierLookup.CommandText = """
+                SELECT id, direct_minimum_quantity, direct_maximum_quantity
+                FROM billing_v2_service_tiers
+                WHERE service_id = @service_id AND code = @code
+                  AND status = 'active' AND public_selectable = 1;
+                """;
+            tierLookup.Parameters.AddWithValue("@service_id", serviceId);
+            tierLookup.Parameters.AddWithValue("@code", command.TierCode.Trim());
+            await using var tierReader = await tierLookup.ExecuteReaderAsync(cancellationToken);
+            if (!await tierReader.ReadAsync(cancellationToken)) return new("CART_TIER_INVALID");
+            tierId = Identifier(tierReader, 0);
+            var tierMinimum = tierReader.GetInt32(1);
+            var tierMaximum = tierReader.GetInt32(2);
+            await tierReader.DisposeAsync();
+            if (command.Origin == BillingV2CartItemOrigins.Direct
+                && !BillingV2CartPolicy.IsDirectQuantityAllowed(command.Quantity, tierMinimum, tierMaximum))
+                return new("CART_DIRECT_QUANTITY_NOT_CONFIGURED");
         }
         if (command.Origin == BillingV2CartItemOrigins.Direct
             && !await HasCurrentInitialPriceAsync(connection, transaction,
@@ -2007,7 +2030,8 @@ public sealed class BillingV2CartService : IBillingV2CartService
                    service.configuration_policy,
                    preset_item.minimum_quantity, preset_item.maximum_quantity,
                    item.configuration_kind, item.configuration_reference, item.display_order, item.created_at, item.updated_at,
-                   service.direct_minimum_quantity, service.direct_maximum_quantity
+                   service.direct_minimum_quantity, service.direct_maximum_quantity,
+                   tier.direct_minimum_quantity, tier.direct_maximum_quantity
             FROM billing_v2_cart_items item JOIN billing_v2_services service ON service.id = item.service_id
             LEFT JOIN billing_v2_service_tiers tier ON tier.id = item.tier_id
             LEFT JOIN billing_v2_preset_items preset_item ON preset_item.id = item.source_preset_item_id
@@ -2033,7 +2057,8 @@ public sealed class BillingV2CartService : IBillingV2CartService
                 ? (reader.IsDBNull(11) ? null : reader.GetBoolean(11))
                 : directEditable;
             var bounds = sourcePresetItemId is null
-                ? (Minimum: reader.GetInt32(25), Maximum: reader.GetInt32(26))
+                ? (Minimum: reader.IsDBNull(27) ? reader.GetInt32(25) : Math.Max(reader.GetInt32(25), reader.GetInt32(27)),
+                    Maximum: reader.IsDBNull(28) ? reader.GetInt32(26) : Math.Min(reader.GetInt32(26), reader.GetInt32(28)))
                 : (Minimum: reader.IsDBNull(18) ? 1 : reader.GetInt32(18),
                     Maximum: reader.IsDBNull(19) ? 10000 : reader.GetInt32(19));
             result.Add(new(Identifier(reader, 0), Identifier(reader, 1), Identifier(reader, 2), reader.GetString(3),
@@ -2262,8 +2287,8 @@ public sealed class BillingV2CartService : IBillingV2CartService
         var connection = new MySqlConnection(_sql.ConnectionString); await connection.OpenAsync(token);
         await using var command = connection.CreateCommand(); command.CommandText = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('billing_v2_carts','billing_v2_cart_items','billing_v2_cart_quotes','billing_v2_services','billing_v2_service_tiers','billing_v2_service_prices','billing_v2_service_dependencies','billing_v2_commitment_terms','billing_v2_commitment_payment_options','billing_v2_offer_presets','billing_v2_preset_items');";
         if (Convert.ToInt32(await command.ExecuteScalarAsync(token)) != RequiredTables.Length) { await connection.DisposeAsync(); throw new InvalidOperationException("BILLING_V2_CART_SCHEMA_UNAVAILABLE"); }
-        command.CommandText = "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND ((table_name = 'billing_v2_preset_items' AND column_name IN ('selected_by_default','minimum_quantity','maximum_quantity')) OR (table_name = 'billing_v2_cart_items' AND column_name = 'origin') OR (table_name = 'billing_v2_services' AND column_name IN ('direct_minimum_quantity','direct_maximum_quantity','requires_subscription_base')));";
-        if (Convert.ToInt32(await command.ExecuteScalarAsync(token)) != 7) { await connection.DisposeAsync(); throw new InvalidOperationException("BILLING_V2_CART_SCHEMA_UNAVAILABLE"); }
+        command.CommandText = "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND ((table_name = 'billing_v2_preset_items' AND column_name IN ('selected_by_default','minimum_quantity','maximum_quantity')) OR (table_name = 'billing_v2_cart_items' AND column_name = 'origin') OR (table_name = 'billing_v2_services' AND column_name IN ('direct_minimum_quantity','direct_maximum_quantity','requires_subscription_base')) OR (table_name = 'billing_v2_service_tiers' AND column_name IN ('direct_minimum_quantity','direct_maximum_quantity')));";
+        if (Convert.ToInt32(await command.ExecuteScalarAsync(token)) != 9) { await connection.DisposeAsync(); throw new InvalidOperationException("BILLING_V2_CART_SCHEMA_UNAVAILABLE"); }
         return connection;
     }
 

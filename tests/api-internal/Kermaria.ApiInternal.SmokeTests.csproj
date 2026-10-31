@@ -11,6 +11,6 @@
     <EmbeddedResource Include="..\..\apps\api-internal\Migrations\MariaDb\098_koxo_quality_intents.sql" LogicalName="KoxoQualityIntentMigration.sql" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\..\apps\api-internal\Kermaria.ApiInternal.csproj" />
-    <PackageReference Include="MySqlConnector" Version="2.6.0" />
+    <PackageReference Include="MySqlConnector" Version="2.6.1" />
   </ItemGroup>
 </Project>

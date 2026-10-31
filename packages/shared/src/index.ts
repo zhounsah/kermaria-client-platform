@@ -2459,6 +2459,9 @@ export interface BillingV2PublicTierAttribute {
 
 export interface BillingV2PublicTier {
   code: string;
+  /** Bornes du palier pour une commande directe, revalidées par API-INTERNAL. */
+  directMinimumQuantity?: number;
+  directMaximumQuantity?: number;
   label: string;
   description: string | null;
   numericValue: number | null;
@@ -2589,6 +2592,8 @@ export type PublicCommercialMoney = {
 
 export type PublicCommercialTier = {
   id: string;
+  directMinimumQuantity?: number;
+  directMaximumQuantity?: number;
   label: string;
   description: string | null;
   /** Décision de catalogue ; le navigateur ne peut jamais rendre un palier sélectionnable. */

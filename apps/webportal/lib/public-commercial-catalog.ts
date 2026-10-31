@@ -343,6 +343,8 @@ function projectTier(
     : null;
   return {
     id: tier.code,
+    directMinimumQuantity: tier.directMinimumQuantity,
+    directMaximumQuantity: tier.directMaximumQuantity,
     label: resolveServicePublicDetail(serviceCode, tier.label) ?? tier.label,
     description: tier.description,
     selectable: tier.publicSelectable,

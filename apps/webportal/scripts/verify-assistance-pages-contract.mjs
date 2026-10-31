@@ -31,6 +31,7 @@ assert.match(pages, /assistanceDisplayPrice/);
 assert.match(offers, /item\.id === offer\.code && item\.selectable/);
 assert.ok(pages.indexOf('className={styles.whySubscribe}') < pages.indexOf('className={styles.choiceSection}'));
 assert.match(pages, /service\.directlyOrderable/);
+assert.match(pages, /assistanceCartHref\(offer\)/);
 assert.match(pages, /Tarif indisponible/);
 assert.match(pages, /<details className=\{styles\.benefits\}>/);
 assert.doesNotMatch(pages + offers, /(?:990|1990|3990|2280|4680|8280)\b/);
@@ -47,7 +48,9 @@ assert.doesNotMatch(css, /#28645e|#eff5f4|linear-gradient\(130deg/);
 assert.match(projection, /"Assistance": "Assistance et maintenance"/);
 assert.match(projection, /directMinimumQuantity: service\.directMinimumQuantity/);
 assert.match(cart, /const quantity = isAssistancePro \? Number\(quantityInput\) : 1/);
-assert.match(cart, /includes\(tierCode\)/);
+assert.match(cart, /findAssistanceOffer\(tierCode\)\?\.audience === "professionnels"/);
+assert.match(cart, /selectedTier\?\.directMaximumQuantity/);
+assert.match(cart, /initialTierCode/);
 assert.match(cart, /service\.id === ASSISTANCE_SERVICE_CODE \? orderAssistanceTiers\(tiers\) : tiers/);
 assert.match(await read("components/PublicCommercialTariffCatalog.tsx"), /assistance \? orderAssistanceTiers\(service\.tiers\.filter/);
 

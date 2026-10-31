@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { ASSISTANCE_SERVICE_CODE, assistanceContactHref, assistanceDisplayPrice, assistanceOffersFor, findAssistanceOffer, orderAssistanceTiers, resolveAssistanceContactContext } from "../lib/assistance-offers.ts";
+import { ASSISTANCE_SERVICE_CODE, assistanceCartHref, assistanceContactHref, assistanceDisplayPrice, assistanceOffersFor, findAssistanceOffer, orderAssistanceTiers, resolveAssistanceContactContext } from "../lib/assistance-offers.ts";
 
 const cases = [
   ["ASSIST-PERS-ESSENTIEL", "particuliers", "essentiel", "Essentiel"],
@@ -23,6 +23,10 @@ for (const [code, audience, anchor, name] of cases) {
   assert.ok(context.message.includes(name));
   assert.ok(context.message.includes(audience === "professionnels" ? "Nombre de postes concernés" : "Nombre d’ordinateurs concernés"));
   assert.equal(new URL(assistanceContactHref(offer), "https://example.test").searchParams.get("assistance"), code);
+  const cartUrl = new URL(assistanceCartHref(offer), "https://example.test");
+  assert.equal(cartUrl.pathname, "/tarifs");
+  assert.equal(cartUrl.searchParams.get("assistance"), code);
+  assert.equal(cartUrl.hash, "#ajouter-assistance-maintenance");
 }
 for (const value of [undefined, null, true, 123, {}, [], "", "inconnu", "ASSIST-PRO-START#other"]) {
   assert.equal(findAssistanceOffer(value), null);

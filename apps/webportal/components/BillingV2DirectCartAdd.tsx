@@ -13,10 +13,11 @@ import {
   describeCartCommandFailure,
   notifyBillingV2CartChanged,
 } from "@/lib/billing-v2-cart-client";
-import { ASSISTANCE_SERVICE_CODE, orderAssistanceTiers } from "@/lib/assistance-offers";
+import { ASSISTANCE_SERVICE_CODE, findAssistanceOffer, orderAssistanceTiers } from "@/lib/assistance-offers";
 
 type Props = {
   currency: string;
+  initialTierCode?: string;
   service: PublicCommercialService;
 };
 
@@ -25,7 +26,7 @@ type Props = {
  * accessibles (`direct`), le navigateur transmet seulement code/palier, et
  * API-INTERNAL revalide l'ensemble avant de composer le Cart.
  */
-export function BillingV2DirectCartAdd({ currency, service }: Props) {
+export function BillingV2DirectCartAdd({ currency, initialTierCode, service }: Props) {
   const selectableTiers = useMemo(
     () => {
       const tiers = service.tiers.filter((tier) => tier.selectable);
@@ -33,15 +34,13 @@ export function BillingV2DirectCartAdd({ currency, service }: Props) {
     },
     [service.id, service.tiers],
   );
-  const [tierCode, setTierCode] = useState(selectableTiers[0]?.id ?? "");
-  const [quantityInput, setQuantityInput] = useState(String(service.directMinimumQuantity ?? 1));
+  const [tierCode, setTierCode] = useState(() =>
+    selectableTiers.some((tier) => tier.id === initialTierCode)
+      ? initialTierCode! : selectableTiers[0]?.id ?? "");
+  const [quantityInput, setQuantityInput] = useState("1");
   const [quantityError, setQuantityError] = useState(false);
-  const isAssistancePro = service.id === "ASSISTANCE-MAINTENANCE" && ["ASSIST-PRO-START", "ASSIST-PRO-BUSINESS", "ASSIST-PRO-PREMIUM"].includes(tierCode);
-  const minimumQuantity = service.directMinimumQuantity;
-  const maximumQuantity = service.directMaximumQuantity;
-  const quantityBoundsAvailable = minimumQuantity !== undefined && maximumQuantity !== undefined
-    && Number.isInteger(minimumQuantity) && Number.isInteger(maximumQuantity)
-    && minimumQuantity > 0 && maximumQuantity >= minimumQuantity;
+  const isAssistance = service.id === ASSISTANCE_SERVICE_CODE;
+  const isAssistancePro = isAssistance && findAssistanceOffer(tierCode)?.audience === "professionnels";
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [added, setAdded] = useState(false);
@@ -50,6 +49,17 @@ export function BillingV2DirectCartAdd({ currency, service }: Props) {
     () => selectableTiers.find((tier) => tier.id === tierCode) ?? null,
     [selectableTiers, tierCode],
   );
+  const minimumQuantity = isAssistance
+    ? service.directMinimumQuantity !== undefined && selectedTier?.directMinimumQuantity !== undefined
+      ? Math.max(service.directMinimumQuantity, selectedTier.directMinimumQuantity) : undefined
+    : service.directMinimumQuantity;
+  const maximumQuantity = isAssistance
+    ? service.directMaximumQuantity !== undefined && selectedTier?.directMaximumQuantity !== undefined
+      ? Math.min(service.directMaximumQuantity, selectedTier.directMaximumQuantity) : undefined
+    : service.directMaximumQuantity;
+  const quantityBoundsAvailable = minimumQuantity !== undefined && maximumQuantity !== undefined
+    && Number.isInteger(minimumQuantity) && Number.isInteger(maximumQuantity)
+    && minimumQuantity > 0 && maximumQuantity >= minimumQuantity;
 
   async function addToCart() {
     const quantity = isAssistancePro ? Number(quantityInput) : 1;
@@ -126,7 +136,11 @@ export function BillingV2DirectCartAdd({ currency, service }: Props) {
           <span>{service.tierSelectorLabel?.trim() || "Option"}</span>
           <select
             disabled={pending}
-            onChange={(event) => setTierCode(event.currentTarget.value)}
+            onChange={(event) => {
+              setTierCode(event.currentTarget.value);
+              setQuantityInput("1");
+              setQuantityError(false);
+            }}
             value={tierCode}
           >
             {selectableTiers.map((tier) => (
@@ -137,10 +151,15 @@ export function BillingV2DirectCartAdd({ currency, service }: Props) {
       ) : null}
       {selectedTier?.recurringPrice ? (
         <p className="commercial-tariff-direct-price">
-          {formatMoney(selectedTier.recurringPrice)} TTC / mois
+          {formatMoney(selectedTier.recurringPrice)} TTC {isAssistancePro ? "/ poste / mois" : "/ mois"}
         </p>
       ) : null}
-      <button className="button" disabled={pending || (isAssistancePro && !quantityBoundsAvailable)} onClick={() => void addToCart()} type="button">
+      {isAssistancePro && quantityBoundsAvailable && /^\d+$/.test(quantityInput)
+        && Number(quantityInput) >= minimumQuantity && Number(quantityInput) <= maximumQuantity
+        && selectedTier?.recurringPrice ? <p className="commercial-tariff-direct-price">
+          Soit {formatMoney({ amountCents: selectedTier.recurringPrice.amountCents * Number(quantityInput), currency: selectedTier.recurringPrice.currency })} TTC / mois pour {quantityInput} poste{Number(quantityInput) > 1 ? "s" : ""}.
+        </p> : null}
+      <button className="button" disabled={pending || (isAssistance && !quantityBoundsAvailable)} onClick={() => void addToCart()} type="button">
         {pending ? "Ajout en cours…" : added ? "Ajouter à nouveau" : "Ajouter au panier"}
       </button>
       {message ? <p id={`quantity-feedback-${service.id}`} aria-live="polite" className="commercial-tariff-direct-feedback">{message} {added || reviewRequired ? <Link href="/panier">Voir mon panier</Link> : null}</p> : null}

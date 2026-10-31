@@ -5,7 +5,7 @@ import { getBillingV2FormulesCatalog } from "@/lib/internal-api";
 import { AnimatedPublicH1, LetterWave } from "@/components/AnimatedPublicH1";
 import { buildPublicCommercialCatalog } from "@/lib/public-commercial-catalog";
 import {
-  ASSISTANCE_AUDIENCES, assistanceContactHref,
+  ASSISTANCE_AUDIENCES, assistanceCartHref, assistanceContactHref,
   assistanceDisplayPrice, assistanceOfferName, assistanceOffersFor,
   type AssistanceAudience, type AssistanceOffer,
 } from "@/lib/assistance-offers";
@@ -41,7 +41,7 @@ export async function AssistanceHub() {
           <Link className="button" href="/assistance-maintenance/particuliers">Pour mon foyer <span aria-hidden="true">↗</span></Link>
           <Link className="button button-secondary" href="/assistance-maintenance/professionnels">Pour mon activité <span aria-hidden="true">↗</span></Link>
         </div>
-        <p className={styles.heroNote}>Particuliers et professionnels · Périmètre confirmé au devis</p>
+        <p className={styles.heroNote}>Particuliers et professionnels · Prix et conditions vérifiés dans le panier</p>
       </div>
       <div aria-hidden="true" className={styles.heroMedia}>
         <Image alt="" height={640} priority src="/brand/network-illustration-motion.webp" width={960} />
@@ -94,11 +94,11 @@ export async function AssistanceHub() {
     </section>
 
     <section className={styles.process} aria-labelledby="assistance-process-title">
-      <div><p className={styles.eyebrow}>La prochaine étape</p><h2 id="assistance-process-title">Un choix clair,<br />puis un échange.</h2></div>
+      <div><p className={styles.eyebrow}>La prochaine étape</p><h2 id="assistance-process-title">Un choix clair,<br />puis votre panier.</h2></div>
       <ol>
         <li><span aria-hidden="true">01</span><div><h3>Comparez les formules</h3><p>Repérez la couverture et le temps d’assistance qui vous conviennent.</p></div></li>
-        <li><span aria-hidden="true">02</span><div><h3>Précisez votre besoin</h3><p>Votre choix accompagne votre demande de devis. Vous pouvez décrire vos équipements et vos usages.</p></div></li>
-        <li><span aria-hidden="true">03</span><div><h3>Confirmez le périmètre</h3><p>Les conditions et les outils nécessaires sont précisés avant la souscription et la mise en service.</p></div></li>
+        <li><span aria-hidden="true">02</span><div><h3>Choisissez la quantité</h3><p>Pour une formule professionnelle, indiquez de 1 à 10 postes. Le panier recalcule le prix.</p></div></li>
+        <li><span aria-hidden="true">03</span><div><h3>Vérifiez avant paiement</h3><p>Relisez la durée, le montant TTC et les conditions dans le panier avant de confirmer.</p></div></li>
       </ol>
     </section>
     <AssistanceHelp />
@@ -136,7 +136,7 @@ export async function AssistanceAudiencePage({ audience }: { audience: Assistanc
     <section id="formules" aria-labelledby="subscriptions-title" className={styles.plansSection}>
       <div className={styles.planHeading}>
         <div><h2 id="subscriptions-title">{offers.length === 3 ? "Trois niveaux de suivi." : "Les formules disponibles."}</h2><p>Comparez la couverture, l’assistance et le suivi inclus.</p></div>
-        <p className={styles.quoteNote}>Votre demande de devis reprend la formule choisie.</p>
+        <p className={styles.quoteNote}>Votre panier reprend la formule choisie et recalcule le montant.</p>
       </div>
       {offers.length > 0 ? <>
         <nav className={styles.planJumps} aria-label="Aller à une formule">
@@ -148,16 +148,19 @@ export async function AssistanceAudiencePage({ audience }: { audience: Assistanc
         <p>Nous ne pouvons pas afficher les tarifs actuels. Vous pouvez nous décrire votre besoin pour préparer un devis.</p>
         <Link className="button button-secondary" href="/contact">Être conseillé</Link>
       </div>}
-      {audience === "professionnels" && offers.length > 0 ? <p className={styles.taxNote}>Prix HT indicatifs pour une opération française taxable. Les montants TTC sont également affichés ; le devis final tient compte de la qualification fiscale du client.</p> : null}
+      {audience === "professionnels" && offers.length > 0 ? <p className={styles.taxNote}>Prix HT indicatifs pour une opération française taxable. Le montant TTC et la TVA applicables sont vérifiés dans le panier avant paiement.</p> : null}
     </section>
 
     <section className={styles.conditions} aria-labelledby="assistance-conditions-title">
       <h2 id="assistance-conditions-title">À savoir avant de choisir</h2>
       <dl>
         <div><dt>Le temps d’assistance</dt><dd>Les minutes incluses sont disponibles chaque mois et ne se reportent pas au mois suivant.</dd></div>
+        <div><dt>Pour les professionnels</dt><dd>Les minutes par poste sont mutualisées entre les postes couverts. Le nombre de postes est choisi dans le panier, de 1 à 10.</dd></div>
+        <div><dt>La prise en charge</dt><dd>Du lundi au vendredi, de 9 h à 18 h, hors jours fériés français. Les contrôles sont planifiés ; aucune surveillance continue ni délai de résolution garanti n’est inclus.</dd></div>
         <div><dt>Les prestations hors forfait</dt><dd>Licences, stockage de sauvegarde, projets et interventions hors forfait sont exclus, sauf mention explicite dans la formule.</dd></div>
-        <div><dt>La mise en service</dt><dd>Le périmètre, les outils nécessaires et les conditions d’intervention sont confirmés avant souscription.</dd></div>
+        <div><dt>La mise en service</dt><dd>Le périmètre, les outils nécessaires et les conditions d’intervention sont présentés avant paiement.</dd></div>
       </dl>
+      <p>La formule Premium particuliers comprend une visite préventive annuelle de 60 minutes en Ille-et-Vilaine, déplacement inclus, sur rendez-vous. <Link href="/cgv">Consulter les conditions générales de vente</Link>.</p>
     </section>
     <AssistanceHelp />
   </div>;
@@ -167,7 +170,7 @@ function SubscriptionCard({ offer, service, tier, index }: { offer: AssistanceOf
   const name = assistanceOfferName(offer, tier.label);
   const price = assistanceDisplayPrice(offer, tier);
   const pro = offer.audience === "professionnels";
-  const directUrl = "/tarifs#ajouter-" + service.id.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/^-|-$/g, "");
+  const directUrl = assistanceCartHref(offer);
   return <article className={styles.card} id={offer.anchor} aria-labelledby={"title-" + offer.anchor}>
     <div className={styles.cardMain}>
       <div className={styles.cardTop}><span aria-hidden="true">0{index + 1}</span><span>{offer.cadence}</span></div>
@@ -182,7 +185,7 @@ function SubscriptionCard({ offer, service, tier, index }: { offer: AssistanceOf
       </dl>
       <ul className={styles.highlights}>{offer.highlights.map((benefit) => <li key={benefit}><span aria-hidden="true">✓</span>{benefit}</li>)}</ul>
       <div className={styles.cardAction}>
-        {service.directlyOrderable ? <Link className="button" href={directUrl}>Choisir une formule sur les tarifs</Link>
+        {service.directlyOrderable ? <Link className="button" href={directUrl}>Choisir cette formule</Link>
           : service.orderingMode === "offer_component" ? <Link className="button" href={service.primaryCta.href}>{service.primaryCta.label}</Link>
           : <Link className="button" aria-label={"Demander un devis pour " + name} href={assistanceContactHref(offer)}>Demander un devis <span aria-hidden="true">↗</span></Link>}
         {service.orderingMode === "quote" ? <p>Votre choix est repris dans le formulaire.</p> : null}

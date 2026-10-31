@@ -22,13 +22,14 @@ public static class BillingV2PricingTests
     {
         var engine = new BillingV2PricingEngine();
         foreach (var (gross, net) in new[] { (2280L, 1900L), (4680L, 3900L), (8280L, 6900L) })
+        foreach (var quantity in new[] { 1, 3, 10 })
         {
             var items = new[] { new BillingV2PricingItem("assistance", "ASSIST-PRO", null,
-                "price", gross, 3, BillingV2BillingCadences.Monthly, false) };
+                "price", gross, quantity, BillingV2BillingCadences.Monthly, false) };
             var pricing = engine.Calculate(new BillingV2PricingRequest(items, 2000,
                 BillingV2PaymentModes.Monthly, 12, null, null, DateTime.UtcNow));
             var split = BillingVatPolicy.FromInclusive(pricing.TotalDueNowCents, 2000);
-            Ensure(pricing.TotalDueNowCents == gross * 3 && split.NetAmountCents == net * 3,
+            Ensure(pricing.TotalDueNowCents == gross * quantity && split.NetAmountCents == net * quantity,
                 "Prix pro par poste, sans remise et TVA francaise a 20 %.");
         }
         foreach (var gross in new[] { 990L, 1990L, 3990L })

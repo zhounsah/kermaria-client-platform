@@ -68,6 +68,9 @@ public sealed record BillingV2PublicTier(
     bool PublicSelectable,
     IReadOnlyList<BillingV2PublicPriceComponent>? PriceComponents = null)
 {
+    public int DirectMinimumQuantity { get; init; } = 1;
+    public int DirectMaximumQuantity { get; init; } = 1;
+
     public long MonthlyFrenchNetAmountCents => Components
         .Where(component => component.IsRecurring
             && component.AppliesToInitialSubscription)

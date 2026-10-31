@@ -12,11 +12,13 @@ import { BillingV2DirectCartAdd } from "@/components/BillingV2DirectCartAdd";
 import { ASSISTANCE_SERVICE_CODE, assistanceContactHref, findAssistanceOffer, orderAssistanceTiers } from "@/lib/assistance-offers";
 
 type PublicCommercialTariffCatalogProps = {
+  assistanceTierCode?: string;
   catalog: PublicCommercialCatalog;
   currency: string;
 };
 
 export function PublicCommercialTariffCatalog({
+  assistanceTierCode,
   catalog,
   currency,
 }: PublicCommercialTariffCatalogProps) {
@@ -75,6 +77,7 @@ export function PublicCommercialTariffCatalog({
             <div className="commercial-tariffs-grid">
               {services.map((service) => (
                 <CommercialTariffCard
+                  assistanceTierCode={assistanceTierCode}
                   currency={currency}
                   key={service.id}
                   service={service}
@@ -89,9 +92,11 @@ export function PublicCommercialTariffCatalog({
 }
 
 function CommercialTariffCard({
+  assistanceTierCode,
   currency,
   service,
 }: {
+  assistanceTierCode?: string;
   currency: string;
   service: PublicCommercialService;
 }) {
@@ -146,7 +151,12 @@ function CommercialTariffCard({
       <div className="commercial-tariff-actions">
         {service.directlyOrderable ? (
           <div id={`ajouter-${slug(service.id)}`}>
-            <BillingV2DirectCartAdd currency={currency} service={service} />
+            <BillingV2DirectCartAdd
+              currency={currency}
+              initialTierCode={assistance ? assistanceTierCode : undefined}
+              key={`${service.id}:${assistanceTierCode ?? ""}`}
+              service={service}
+            />
           </div>
         ) : (
           <Link
